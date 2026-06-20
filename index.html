@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MedMitra — Aapka Medical Wala, Ab Online</title>
+  <link href="https://fonts.googleapis.com/css2?family=Mukta:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --navy: #0D1B2A; --navy-mid: #1A2E45; --saffron: #F5A623;
+      --green: #1a7a4a; --green-light: #22a05a; --red: #E74C3C;
+      --text-muted: #8A9BB0; --white: #ffffff; --border: rgba(255,255,255,0.08);
+    }
+    html { scroll-behavior: smooth; }
+    body { font-family: 'Inter', sans-serif; background: var(--navy); color: var(--white); min-height: 100vh; }
+    .screen { display: none; min-height: 100vh; }
+    .screen.active { display: flex; flex-direction: column; }
+
+    /* ===== LANDING ===== */
+    #landing-screen { background: #f8faf8; color: #1a2e1a; }
+
+    .land-nav {
+      background: #fff;
+      border-bottom: 1px solid #e8f0e8;
+      padding: 14px 5%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky; top: 0; z-index: 100;
+    }
+    .land-logo { font-family: 'Mukta', sans-serif; font-weight: 800; font-size: 1.5rem; color: #1a2e1a; }
+    .land-logo span { color: var(--green-light); }
+    .land-logo sup { font-size: 0.5em; color: var(--green-light); }
+    .land-nav-links { display: flex; gap: 24px; align-items: center; }
+    .land-nav-links a { color: #4a6a4a; font-size: 0.88rem; text-decoration: none; font-weight: 500; }
+    .land-nav-cta { background: var(--green-light); color: #fff; padding: 10px 22px; border-radius: 8px; font-weight: 700; font-size: 0.88rem; cursor: pointer; border: none; font-family: 'Inter', sans-serif; }
+
+    .land-hero {
+      padding: 60px 5% 80px;
+      max-width: 1100px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 60px;
+      align-items: center;
+    }
+    .land-badges { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
+    .land-badge { background: #e8f5e8; color: var(--green); font-size: 0.75rem; font-weight: 600; padding: 5px 12px; border-radius: 100px; display: flex; align-items: center; gap: 5px; }
+    .land-h1 { font-family: 'Mukta', sans-serif; font-size: clamp(2rem, 4vw, 3rem); font-weight: 800; color: #1a2e1a; line-height: 1.15; margin-bottom: 16px; }
+    .land-h1 span { color: var(--green-light); }
+    .land-sub { color: #4a6a4a; font-size: 1rem; line-height: 1.7; margin-bottom: 32px; }
+    .land-hero-btns { display: flex; gap: 12px; flex-wrap: wrap; }
+    .land-btn-primary { background: var(--green-light); color: #fff; padding: 13px 24px; border-radius: 8px; font-weight: 700; font-size: 0.92rem; cursor: pointer; border: none; font-family: 'Inter', sans-serif; transition: opacity 0.2s; }
+    .land-btn-primary:hover { opacity: 0.88; }
+    .land-btn-outline { background: transparent; color: var(--green); padding: 13px 24px; border-radius: 8px; font-weight: 600; font-size: 0.92rem; cursor: pointer; border: 2px solid var(--green-light); font-family: 'Inter', sans-serif; transition: all 0.2s; }
+    .land-btn-outline:hover { background: #e8f5e8; }
+    .land-btn-orange { background: #f5a623; color: #fff; padding: 13px 24px; border-radius: 8px; font-weight: 700; font-size: 0.92rem; cursor: pointer; border: none; font-family: 'Inter', sans-serif; }
+
+    .land-phone-card {
+      background: #1a2e1a;
+      border-radius: 24px;
+      padding: 24px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+    }
+    .phone-inner { background: #fff; border-radius: 16px; padding: 20px; color: #1a2e1a; }
+    .phone-top { font-size: 0.75rem; color: #888; margin-bottom: 4px; }
+    .phone-location { font-weight: 700; font-size: 1rem; margin-bottom: 16px; display: flex; align-items: center; gap: 6px; }
+    .shop-card-mini { background: #f8faf8; border-radius: 12px; padding: 14px; margin-bottom: 12px; }
+    .shop-card-mini-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+    .shop-card-mini-name { font-weight: 700; font-size: 0.9rem; }
+    .verified-badge { background: #e8f5e8; color: var(--green); font-size: 0.65rem; font-weight: 700; padding: 3px 8px; border-radius: 100px; }
+    .shop-card-mini-info { font-size: 0.75rem; color: #666; }
+    .order-status { background: #e8f5e8; border-radius: 10px; padding: 12px; display: flex; align-items: center; gap: 10px; }
+    .order-status-icon { font-size: 1.5rem; }
+    .order-status-text { font-size: 0.82rem; font-weight: 600; color: var(--green); }
+    .order-status-sub { font-size: 0.72rem; color: #666; }
+
+    /* HOW IT WORKS */
+    .land-section { padding: 70px 5%; max-width: 1100px; margin: 0 auto; }
+    .land-section-white { background: #fff; padding: 70px 5%; }
+    .land-section-white .land-section { padding: 0; }
+    .land-center { text-align: center; }
+    .land-section-tag { font-size: 0.75rem; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--green-light); margin-bottom: 10px; }
+    .land-section-title { font-family: 'Mukta', sans-serif; font-size: clamp(1.6rem, 3vw, 2.2rem); font-weight: 800; color: #1a2e1a; margin-bottom: 40px; }
+    .steps-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px; }
+    .step-item { text-align: center; }
+    .step-num { width: 48px; height: 48px; border-radius: 50%; background: var(--green-light); color: #fff; font-family: 'Mukta', sans-serif; font-weight: 800; font-size: 1.2rem; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; }
+    .step-icon-big { font-size: 2.5rem; margin-bottom: 12px; }
+    .step-title { font-weight: 700; font-size: 1rem; color: #1a2e1a; margin-bottom: 8px; }
+    .step-desc { font-size: 0.85rem; color: #4a6a4a; line-height: 1.6; }
+
+    /* PARTNER SECTIONS */
+    .partner-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 40px; }
+    .partner-card { background: #f8faf8; border-radius: 16px; padding: 28px; }
+    .partner-card.green { background: #e8f5e8; }
+    .partner-card.orange { background: #fff5e8; }
+    .partner-card-title { font-family: 'Mukta', sans-serif; font-weight: 800; font-size: 1.1rem; color: #1a2e1a; margin-bottom: 8px; }
+    .partner-card-title.green-text { color: var(--green); }
+    .partner-card-title.orange-text { color: #e67e22; }
+    .partner-card p { font-size: 0.85rem; color: #4a6a4a; line-height: 1.6; margin-bottom: 16px; }
+    .partner-list { list-style: none; display: flex; flex-direction: column; gap: 6px; margin-bottom: 20px; }
+    .partner-list li { font-size: 0.82rem; color: #4a6a4a; display: flex; align-items: center; gap: 8px; }
+    .partner-list li::before { content: '✓'; color: var(--green-light); font-weight: 700; }
+
+    /* STATS */
+
+
+    /* FOOTER */
+    .land-footer { background: #1a2e1a; padding: 48px 5% 24px; }
+    .land-footer-inner { max-width: 1100px; margin: 0 auto; }
+    .land-footer-top { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 40px; margin-bottom: 32px; }
+    .footer-logo { font-family: 'Mukta', sans-serif; font-weight: 800; font-size: 1.4rem; color: #fff; margin-bottom: 10px; }
+    .footer-logo span { color: var(--green-light); }
+    .footer-desc { font-size: 0.82rem; color: #8a9b8a; line-height: 1.6; }
+    .footer-col-title { font-weight: 700; font-size: 0.85rem; color: #fff; margin-bottom: 14px; }
+    .footer-col-links { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+    .footer-col-links li a { font-size: 0.8rem; color: #8a9b8a; text-decoration: none; }
+    .footer-bottom { border-top: 1px solid rgba(255,255,255,0.08); padding-top: 20px; display: flex; justify-content: space-between; align-items: center; }
+    .footer-bottom p { font-size: 0.75rem; color: #8a9b8a; }
+
+    /* ===== APP SCREENS ===== */
+    .app-screen { background: var(--navy); }
+    .login-box { width: 100%; max-width: 420px; }
+    .logo-big { font-family: 'Mukta', sans-serif; font-size: 2.2rem; font-weight: 800; text-align: center; margin-bottom: 6px; }
+    .logo-big span { color: var(--green-light); }
+    .logo-sub { text-align: center; color: var(--text-muted); font-size: 0.88rem; margin-bottom: 32px; }
+    .form-group { margin-bottom: 16px; }
+    .form-group label { display: block; font-size: 0.82rem; color: var(--text-muted); margin-bottom: 6px; font-weight: 500; }
+    .form-group input, .form-group textarea { width: 100%; padding: 12px 14px; background: var(--navy-mid); border: 1.5px solid var(--border); border-radius: 8px; color: var(--white); font-size: 0.95rem; font-family: 'Inter', sans-serif; outline: none; transition: border-color 0.2s; }
+    .form-group input:focus, .form-group textarea:focus { border-color: var(--green-light); }
+    .form-group textarea { resize: none; height: 80px; }
+    .btn { width: 100%; padding: 13px; border-radius: 8px; border: none; font-family: 'Mukta', sans-serif; font-size: 1rem; font-weight: 700; cursor: pointer; transition: all 0.2s; }
+    .btn-green { background: var(--green-light); color: #fff; }
+    .btn-green:hover { opacity: 0.88; }
+    .btn-green:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-accept { background: var(--green-light); color: #fff; }
+    .btn-red { background: var(--red); color: #fff; }
+    .btn-saffron { background: var(--saffron); color: var(--navy); }
+    .btn-navy { background: var(--navy-mid); color: #fff; border: 1px solid var(--border); }
+    .auth-toggle { text-align: center; margin-top: 14px; font-size: 0.85rem; color: var(--text-muted); }
+    .auth-toggle a { color: var(--green-light); cursor: pointer; font-weight: 600; }
+    .topbar { background: var(--navy-mid); border-bottom: 1px solid var(--border); padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 50; }
+    .topbar-logo { font-family: 'Mukta', sans-serif; font-weight: 800; font-size: 1.3rem; }
+    .topbar-logo span { color: var(--green-light); }
+    .topbar-right { display: flex; align-items: center; gap: 12px; }
+    .topbar-user { font-size: 0.8rem; color: var(--text-muted); }
+    .logout-btn { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--text-muted); font-size: 0.8rem; cursor: pointer; }
+    .logout-btn:hover { border-color: var(--red); color: var(--red); }
+    .content { flex: 1; padding: 20px; max-width: 700px; margin: 0 auto; width: 100%; }
+    .section-title { font-family: 'Mukta', sans-serif; font-size: 1.3rem; font-weight: 800; margin-bottom: 4px; }
+    .section-sub { color: var(--text-muted); font-size: 0.82rem; margin-bottom: 16px; }
+    .card { background: var(--navy-mid); border: 1px solid var(--border); border-radius: 14px; padding: 20px; margin-bottom: 14px; }
+    .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+    .card-title { font-family: 'Mukta', sans-serif; font-weight: 700; font-size: 1rem; }
+    .card-sub { color: var(--text-muted); font-size: 0.8rem; margin-top: 2px; }
+    .badge { padding: 4px 10px; border-radius: 100px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; }
+    .badge-pending { background: rgba(245,166,35,0.15); color: var(--saffron); }
+    .badge-accepted { background: rgba(34,160,90,0.15); color: var(--green-light); }
+    .badge-delivered { background: rgba(74,144,217,0.15); color: #4A90D9; }
+    .badge-rejected { background: rgba(231,76,60,0.15); color: var(--red); }
+    .card-detail { font-size: 0.85rem; color: #C8D8E8; margin-bottom: 8px; line-height: 1.5; }
+    .card-detail strong { color: #fff; }
+    .card-actions { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+    .card-actions .btn { width: auto; padding: 8px 18px; font-size: 0.85rem; }
+    .order-form { background: var(--navy-mid); border: 1px solid var(--border); border-radius: 14px; padding: 20px; margin-bottom: 20px; }
+    .order-form-title { font-family: 'Mukta', sans-serif; font-weight: 700; font-size: 1.05rem; margin-bottom: 16px; }
+    .stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+    .stat-card { background: var(--navy-mid); border: 1px solid var(--border); border-radius: 12px; padding: 14px; text-align: center; }
+    .stat-num { font-family: 'Mukta', sans-serif; font-size: 1.8rem; font-weight: 800; color: var(--green-light); }
+    .stat-label { font-size: 0.7rem; color: var(--text-muted); margin-top: 2px; }
+    .empty { text-align: center; padding: 40px 20px; color: var(--text-muted); }
+    .empty-icon { font-size: 2.5rem; margin-bottom: 10px; }
+    .empty-text { font-size: 0.88rem; line-height: 1.6; }
+    #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(100px); background: var(--navy-mid); border: 1px solid var(--border); color: #fff; padding: 12px 24px; border-radius: 100px; font-size: 0.85rem; font-weight: 500; z-index: 999; transition: transform 0.3s ease; white-space: nowrap; }
+    #toast.show { transform: translateX(-50%) translateY(0); }
+    #toast.success { border-color: var(--green-light); color: var(--green-light); }
+    #toast.error { border-color: var(--red); color: var(--red); }
+    .loader { display: inline-block; width: 15px; height: 15px; border: 2px solid rgba(255,255,255,0.2); border-top-color: #fff; border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: middle; margin-right: 6px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-screen { display: flex; align-items: center; justify-content: center; height: 100px; color: var(--text-muted); }
+    .divider { border: none; border-top: 1px solid var(--border); margin: 18px 0; }
+    .shop-option { background: rgba(255,255,255,0.03); border: 2px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 10px; cursor: pointer; transition: all 0.2s; }
+    .shop-option:hover, .shop-option.selected { border-color: var(--green-light); background: rgba(34,160,90,0.05); }
+    .shop-option-name { font-weight: 600; font-size: 0.92rem; }
+    .shop-option-area { color: var(--text-muted); font-size: 0.78rem; margin-top: 2px; }
+    .input-toggle { display: flex; gap: 8px; margin-bottom: 14px; }
+    .toggle-btn { flex: 1; padding: 10px; border-radius: 8px; border: 1.5px solid var(--border); background: transparent; color: var(--text-muted); font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: 'Inter', sans-serif; }
+    .toggle-btn.active { border-color: var(--green-light); color: var(--green-light); background: rgba(34,160,90,0.08); }
+    .prescription-box { border: 2px dashed var(--border); border-radius: 12px; padding: 20px; text-align: center; cursor: pointer; transition: all 0.2s; position: relative; }
+    .prescription-box:hover { border-color: var(--green-light); }
+    .prescription-box input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+    .preview-img { width: 100%; max-height: 160px; object-fit: contain; border-radius: 8px; margin-top: 10px; display: none; border: 1px solid var(--border); }
+    .ai-scanning { background: rgba(34,160,90,0.08); border: 1px solid rgba(34,160,90,0.2); border-radius: 10px; padding: 12px; margin-top: 10px; display: none; text-align: center; font-size: 0.82rem; color: var(--green-light); }
+    .ai-result { background: rgba(34,160,90,0.08); border: 1px solid rgba(34,160,90,0.2); border-radius: 10px; padding: 12px; margin-top: 10px; display: none; }
+    .ai-result-title { font-size: 0.75rem; color: var(--green-light); font-weight: 700; margin-bottom: 6px; text-transform: uppercase; }
+    .ai-result-text { font-size: 0.85rem; color: #C8D8E8; line-height: 1.6; white-space: pre-wrap; }
+    .rx-img { width: 100%; max-height: 150px; object-fit: contain; border-radius: 8px; margin-top: 8px; border: 1px solid var(--border); cursor: pointer; }
+    #img-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 200; align-items: center; justify-content: center; padding: 20px; }
+    #img-modal.open { display: flex; }
+    #img-modal img { max-width: 100%; max-height: 90vh; border-radius: 10px; }
+    #img-modal-close { position: absolute; top: 16px; right: 16px; background: var(--navy-mid); border: 1px solid var(--border); color: #fff; width: 34px; height: 34px; border-radius: 50%; font-size: 1rem; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+
+    /* FLOATING SUPPORT BUTTON */
+    #support-btn {
+      position: fixed;
+      bottom: 20px; right: 20px;
+      background: #25D366;
+      color: #fff;
+      border-radius: 50px;
+      padding: 12px 18px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      font-size: 0.85rem;
+      text-decoration: none;
+      box-shadow: 0 4px 16px rgba(37,211,102,0.4);
+      z-index: 150;
+      transition: transform 0.2s, opacity 0.2s;
+    }
+    #support-btn:hover { transform: translateY(-2px); opacity: 0.92; }
+    #support-btn .wa-icon { font-size: 1.2rem; }
+
+    /* LOGIN SCREENS SPECIFIC */
+    #customer-login-screen, #shop-login-screen, #rider-login-screen {
+      align-items: center; justify-content: center; padding: 24px; min-height: 100vh;
+    }
+    .login-back { display: flex; align-items: center; gap: 8px; color: var(--text-muted); font-size: 0.82rem; cursor: pointer; margin-bottom: 24px; }
+    .login-back:hover { color: #fff; }
+    .login-role-badge { display: inline-flex; align-items: center; gap: 8px; background: rgba(34,160,90,0.1); border: 1px solid rgba(34,160,90,0.2); color: var(--green-light); font-size: 0.78rem; font-weight: 700; padding: 6px 14px; border-radius: 100px; margin-bottom: 16px; }
+    .auth-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 20px; }
+    .auth-tab { padding: 10px; border-radius: 8px; border: 1.5px solid var(--border); background: transparent; color: var(--text-muted); font-family: 'Mukta', sans-serif; font-size: 0.95rem; font-weight: 600; cursor: pointer; text-align: center; transition: all 0.2s; }
+    .auth-tab.active { border-color: var(--green-light); color: var(--green-light); background: rgba(34,160,90,0.08); }
+
+    @media (max-width: 768px) {
+      .land-hero { grid-template-columns: 1fr; }
+      .land-phone-card { display: none; }
+      .steps-grid { grid-template-columns: 1fr; }
+      .partner-grid { grid-template-columns: 1fr; }
+      .stats-bar-inner { grid-template-columns: 1fr 1fr; }
+      .land-footer-top { grid-template-columns: 1fr 1fr; }
+      .land-nav-links { display: none; }
+    }
+  </style>
+</head>
+<body>
+<div id="toast"></div>
+<div id="img-modal"><button id="img-modal-close" onclick="closeModal()">✕</button><img id="modal-img" src="" /></div>
+
+<!-- FLOATING SUPPORT BUTTON -->
+<a id="support-btn" href="https://wa.me/919057359737?text=Hi%20MedMitra%2C%20mujhe%20help%20chahiye%20%F0%9F%99%8F" target="_blank">
+  <span class="wa-icon">💬</span> Support
+</a>
+
+<!-- ===== LANDING ===== -->
+<div id="landing-screen" class="screen active">
+  <nav class="land-nav">
+    <div class="land-logo">Med<span>Mitra</span></div>
+    <div class="land-nav-links">
+      <a href="#">How It Works</a>
+      <a href="#">For Pharmacy</a>
+      <a href="#">For Riders</a>
+      <a href="https://wa.me/919057359737?text=Hi%20MedMitra%2C%20mujhe%20help%20chahiye" target="_blank" style="color:var(--green-light);font-weight:700;">💬 Support</a>
+    </div>
+    <button class="land-nav-cta" onclick="goTo('customer-login-screen')">Order Medicine</button>
+  </nav>
+
+  <!-- HERO -->
+  <div class="land-hero">
+    <div>
+      <div class="land-badges">
+        <div class="land-badge">✓ Verified Local Pharmacies</div>
+        <div class="land-badge">⚡ Fast Delivery</div>
+        <div class="land-badge">🔒 Safe & Secure Orders</div>
+      </div>
+      <h1 class="land-h1">Apne Medical Wale<br/><span>Bhaiya, Ab Online.</span></h1>
+      <p class="land-sub">Trusted medicines from verified local pharmacies, delivered right to your doorstep.</p>
+      <div class="land-hero-btns">
+        <button class="land-btn-primary" onclick="goTo('customer-login-screen')">🛍️ Order Medicine</button>
+        <button class="land-btn-outline" onclick="goTo('shop-login-screen')">🏪 Join as a Pharmacy</button>
+        <button class="land-btn-orange" onclick="goTo('rider-login-screen')">🛵 Join as a Rider</button>
+      </div>
+      <p style="margin-top:20px;font-size:0.8rem;color:#6a8a6a;">🤝 Supporting local pharmacies. Strengthening communities.</p>
+    </div>
+    <div class="land-phone-card">
+      <div class="phone-inner">
+        <div class="phone-top">Delivering to</div>
+        <div class="phone-location">📍 Your Location ↓</div>
+        <div class="shop-card-mini">
+          <div class="shop-card-mini-top">
+            <div class="shop-card-mini-name">Sharma Medical Store</div>
+            <span class="verified-badge">Verified</span>
+          </div>
+          <div class="shop-card-mini-info">⭐ 4.8 (256) • 1.2 km away • 30-40 min • Fast Delivery</div>
+        </div>
+        <div class="order-status">
+          <div class="order-status-icon">🛵</div>
+          <div>
+            <div class="order-status-text">Your order is on the way!</div>
+            <div class="order-status-sub">Our rider will reach you soon.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- HOW IT WORKS -->
+  <div class="land-section-white">
+    <div class="land-section land-center">
+      <div class="land-section-tag">Simple Process</div>
+      <div class="land-section-title">How It Works</div>
+      <div class="steps-grid">
+        <div class="step-item">
+          <div class="step-num">1</div>
+          <div class="step-icon-big">📋</div>
+          <div class="step-title">Upload Prescription</div>
+          <div class="step-desc">Upload your prescription or search for medicines directly.</div>
+        </div>
+        <div class="step-item">
+          <div class="step-num">2</div>
+          <div class="step-icon-big">🏪</div>
+          <div class="step-title">Pharmacy Confirms Order</div>
+          <div class="step-desc">A verified local pharmacy reviews and confirms your order.</div>
+        </div>
+        <div class="step-item">
+          <div class="step-num">3</div>
+          <div class="step-icon-big">🛵</div>
+          <div class="step-title">Get Medicines Delivered</div>
+          <div class="step-desc">Receive your medicines safely and quickly at your doorstep.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PARTNER SECTIONS -->
+  <div class="land-section">
+    <div class="land-center" style="margin-bottom:8px"><div class="land-section-tag">For Everyone</div></div>
+    <div class="partner-grid">
+      <div class="partner-card green">
+        <div class="partner-card-title green-text">Apni Pharmacy Online Le Jao</div>
+        <p>Grow your pharmacy with online orders and seamless delivery.</p>
+        <ul class="partner-list">
+          <li>Receive online orders</li>
+          <li>Manage deliveries easily</li>
+          <li>Increase sales & reach</li>
+          <li>Build customer loyalty</li>
+        </ul>
+        <button class="land-btn-primary" onclick="goTo('shop-login-screen')">Join as a Pharmacy →</button>
+      </div>
+      <div class="partner-card orange">
+        <div class="partner-card-title orange-text">Delivery Karke Extra Income Kamao</div>
+        <p>Earn on your own time by delivering medicines.</p>
+        <ul class="partner-list">
+          <li>Flexible working hours</li>
+          <li>Weekly payouts</li>
+          <li>Incentives & bonuses</li>
+          <li>Be your own boss</li>
+        </ul>
+        <button class="land-btn-orange" onclick="goTo('rider-login-screen')">Join as a Rider →</button>
+      </div>
+      <div class="partner-card">
+        <div class="partner-card-title">Why Partner with MedMitra?</div>
+        <p>Join India's fastest growing hyperlocal medicine network.</p>
+        <ul class="partner-list">
+          <li>Trusted brand</li>
+          <li>Dedicated support</li>
+          <li>Easy to use platform</li>
+          <li>Grow your business or income</li>
+        </ul>
+        <button class="land-btn-outline" onclick="goTo('customer-login-screen')">Learn More →</button>
+      </div>
+    </div>
+  </div>
+
+
+
+  <!-- FOOTER -->
+  <div class="land-footer">
+    <div class="land-footer-inner">
+      <div class="land-footer-top">
+        <div>
+          <div class="footer-logo">Med<span>Mitra</span></div>
+          <div class="footer-desc">Your Trusted Pharmacy Network. Connecting you with trusted local pharmacies for a healthier tomorrow.</div>
+        </div>
+        <div>
+          <div class="footer-col-title">Company</div>
+          <ul class="footer-col-links"><li><a href="#">About Us</a></li><li><a href="#">How It Works</a></li><li><a href="#">Contact Us</a></li></ul>
+        </div>
+        <div>
+          <div class="footer-col-title">For Customers</div>
+          <ul class="footer-col-links"><li><a href="javascript:void(0)" onclick="goTo('customer-login-screen')">Order Medicine</a></li><li><a href="#">FAQs</a></li><li><a href="#">Support</a></li></ul>
+        </div>
+        <div>
+          <div class="footer-col-title">For Partners</div>
+          <ul class="footer-col-links"><li><a href="javascript:void(0)" onclick="goTo('shop-login-screen')">Pharmacy Partner</a></li><li><a href="javascript:void(0)" onclick="goTo('rider-login-screen')">Rider Partner</a></li></ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>© 2026 MedMitra. All rights reserved.</p>
+        <p>Privacy Policy • Terms & Conditions</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== CUSTOMER LOGIN ===== -->
+<div id="customer-login-screen" class="screen app-screen">
+  <div style="display:flex;align-items:center;justify-content:center;padding:24px;min-height:100vh;">
+    <div class="login-box">
+      <div class="login-back" onclick="goTo('landing-screen')">← Back to Home</div>
+      <div class="logo-big">Med<span>Mitra</span></div>
+      <div style="text-align:center;margin-bottom:20px"><span class="login-role-badge">🏠 Customer Portal</span></div>
+      <div class="auth-tabs">
+        <button class="auth-tab active" onclick="setAuthTab('c','login')" id="c-tab-login">🔑 Login</button>
+        <button class="auth-tab" onclick="setAuthTab('c','register')" id="c-tab-register">📝 Register</button>
+      </div>
+      <div class="form-group"><label>Phone Number</label><input type="tel" id="c-phone" placeholder="10-digit number" maxlength="10" /></div>
+      <div id="c-register-fields" style="display:none">
+        <div class="form-group"><label>Aapka Naam</label><input type="text" id="c-name" placeholder="Full name" /></div>
+        <div class="form-group"><label>Delivery Address</label><input type="text" id="c-address" placeholder="Ghar ka address" /></div>
+        <div class="form-group"><label>Area / Mohalla</label><input type="text" id="c-area" placeholder="Jaise: Shastri Nagar" /></div>
+      </div>
+      <button class="btn btn-green" onclick="loginCustomer()" id="c-login-btn">🔑 Login</button>
+      <div class="auth-toggle">Naya account? <a href="javascript:void(0)" onclick="setAuthTab('c','register')">Register karo</a></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SHOP LOGIN ===== -->
+<div id="shop-login-screen" class="screen app-screen">
+  <div style="display:flex;align-items:center;justify-content:center;padding:24px;min-height:100vh;">
+    <div class="login-box">
+      <div class="login-back" onclick="goTo('landing-screen')">← Back to Home</div>
+      <div class="logo-big">Med<span>Mitra</span></div>
+      <div style="text-align:center;margin-bottom:20px"><span class="login-role-badge">🏪 Pharmacy Portal</span></div>
+      <div class="auth-tabs">
+        <button class="auth-tab active" onclick="setAuthTab('s','login')" id="s-tab-login">🔑 Login</button>
+        <button class="auth-tab" onclick="setAuthTab('s','register')" id="s-tab-register">📝 Register</button>
+      </div>
+      <div class="form-group"><label>Phone Number</label><input type="tel" id="s-phone" placeholder="10-digit number" maxlength="10" /></div>
+      <div id="s-register-fields" style="display:none">
+        <div class="form-group"><label>Owner Name</label><input type="text" id="s-owner-name" placeholder="Aapka naam" /></div>
+        <div class="form-group"><label>Shop Name</label><input type="text" id="s-shop-name" placeholder="Jaise: Sharma Medical Store" /></div>
+        <div class="form-group"><label>Shop Address</label><input type="text" id="s-address" placeholder="Dukaan ka address" /></div>
+        <div class="form-group"><label>Area / Mohalla</label><input type="text" id="s-area" placeholder="Jaise: Shastri Nagar" /></div>
+        <div class="form-group"><label>City</label><input type="text" id="s-city" placeholder="Aapka shehar" /></div>
+      </div>
+      <button class="btn btn-green" onclick="loginShop()" id="s-login-btn">🔑 Login</button>
+      <div class="auth-toggle">Naya account? <a href="javascript:void(0)" onclick="setAuthTab('s','register')">Register karo</a></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== RIDER LOGIN ===== -->
+<div id="rider-login-screen" class="screen app-screen">
+  <div style="display:flex;align-items:center;justify-content:center;padding:24px;min-height:100vh;">
+    <div class="login-box">
+      <div class="login-back" onclick="goTo('landing-screen')">← Back to Home</div>
+      <div class="logo-big">Med<span>Mitra</span></div>
+      <div style="text-align:center;margin-bottom:20px"><span class="login-role-badge">🛵 Rider Portal</span></div>
+      <div class="auth-tabs">
+        <button class="auth-tab active" onclick="setAuthTab('r','login')" id="r-tab-login">🔑 Login</button>
+        <button class="auth-tab" onclick="setAuthTab('r','register')" id="r-tab-register">📝 Register</button>
+      </div>
+      <div class="form-group"><label>Phone Number</label><input type="tel" id="r-phone" placeholder="10-digit number" maxlength="10" /></div>
+      <div id="r-register-fields" style="display:none">
+        <div class="form-group"><label>Aapka Naam</label><input type="text" id="r-name" placeholder="Full name" /></div>
+        <div class="form-group"><label>Current Area</label><input type="text" id="r-area" placeholder="Jaise: Shastri Nagar" /></div>
+        <div class="form-group"><label>City</label><input type="text" id="r-city" placeholder="Aapka shehar" /></div>
+      </div>
+      <button class="btn btn-green" onclick="loginRider()" id="r-login-btn">🔑 Login</button>
+      <div class="auth-toggle">Naya account? <a href="javascript:void(0)" onclick="setAuthTab('r','register')">Register karo</a></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== CUSTOMER DASHBOARD ===== -->
+<div id="customer-screen" class="screen app-screen">
+  <div class="topbar">
+    <div class="topbar-logo">Med<span>Mitra</span></div>
+    <div class="topbar-right"><span class="topbar-user" id="customer-name-display"></span><button class="logout-btn" onclick="logout('customer')">Logout</button></div>
+  </div>
+  <div class="content">
+    <div class="order-form">
+      <div class="order-form-title">💊 Medicine Order Karo</div>
+      <div class="input-toggle">
+        <button class="toggle-btn active" onclick="setInputMethod('text')" id="method-text">✏️ Naam Likho</button>
+        <button class="toggle-btn" onclick="setInputMethod('photo')" id="method-photo">📷 Prescription Photo</button>
+      </div>
+      <div id="text-method">
+        <div class="form-group"><label>Medicines</label><textarea id="order-medicines" placeholder="Jaise: Paracetamol 500mg x2, Crocin x1"></textarea></div>
+      </div>
+      <div id="photo-method" style="display:none">
+        <div class="prescription-box" id="rx-upload-box">
+          <input type="file" id="rx-file" accept="image/*" onchange="handleRxUpload(event)" />
+          <div style="font-size:2rem;margin-bottom:8px">📷</div>
+          <div style="font-size:0.82rem;color:var(--text-muted)">Prescription photo yahan daalo<br/><strong style="color:var(--green-light)">Click karo ya drag karo</strong></div>
+          <img id="rx-preview" class="preview-img" />
+        </div>
+        <div class="ai-scanning" id="ai-scanning"><span class="loader"></span> AI prescription padh raha hai...</div>
+        <div class="ai-result" id="ai-result-box"><div class="ai-result-title">✨ AI ne ye medicines padhi</div><div class="ai-result-text" id="ai-result-text"></div></div>
+        <div id="photo-ok-msg" style="display:none;margin-top:10px;padding:10px 14px;background:rgba(34,160,90,0.08);border:1px solid rgba(34,160,90,0.2);border-radius:8px;font-size:0.82rem;color:var(--green-light);">✅ Photo upload ho gayi — bas address aur shop select karo!</div>
+      </div>
+      <div class="form-group" style="margin-top:14px"><label>Delivery Address</label><input type="text" id="order-address" placeholder="Ghar ka address" /></div>
+      <div class="form-group"><label>Note (Optional)</label><input type="text" id="order-notes" placeholder="Jaise: urgent hai, generic dena" /></div>
+      <div class="form-group"><label>Shop Select Karo</label><div id="shops-list"><div class="loading-screen"><span class="loader"></span> Shops load ho rahi hain...</div></div></div>
+      <button class="btn btn-green" onclick="placeOrder()" id="order-btn">Order Place Karo 🛵</button>
+      <a id="wa-send-btn" href="#" target="_blank" rel="noopener" style="display:none;margin-top:10px;padding:12px;background:#25D366;color:#fff;border-radius:8px;font-weight:700;font-size:0.92rem;align-items:center;justify-content:center;gap:8px;text-decoration:none;">
+        📲 WhatsApp pe Order Bhejo
+      </a>
+    </div>
+    <hr class="divider" />
+    <div class="section-title">Mere Orders</div>
+    <div class="section-sub">Tumhare saare orders yahan dikhenge</div>
+    <div id="customer-orders"><div class="loading-screen"><span class="loader"></span></div></div>
+  </div>
+</div>
+
+<!-- ===== SHOP DASHBOARD ===== -->
+<div id="shop-screen" class="screen app-screen">
+  <div class="topbar">
+    <div class="topbar-logo">Med<span>Mitra</span></div>
+    <div class="topbar-right"><span class="topbar-user" id="shop-name-display"></span><button class="logout-btn" onclick="logout('shop')">Logout</button></div>
+  </div>
+  <div class="content">
+    <div class="stats-row">
+      <div class="stat-card"><div class="stat-num" id="stat-pending">0</div><div class="stat-label">Pending</div></div>
+      <div class="stat-card"><div class="stat-num" id="stat-accepted">0</div><div class="stat-label">Accepted</div></div>
+      <div class="stat-card"><div class="stat-num" id="stat-delivered">0</div><div class="stat-label">Delivered</div></div>
+    </div>
+    <div class="section-title">Incoming Orders</div>
+    <div class="section-sub">Naye orders accept ya reject karo • Auto-refresh: 15 sec</div>
+    <div id="shop-orders" style="margin-top:14px"><div class="loading-screen"><span class="loader"></span></div></div>
+  </div>
+</div>
+
+<!-- ===== RIDER DASHBOARD ===== -->
+<div id="rider-screen" class="screen app-screen">
+  <div class="topbar">
+    <div class="topbar-logo">Med<span>Mitra</span> <span style="font-size:0.75rem;color:var(--text-muted);font-weight:400;">🛵</span></div>
+    <div class="topbar-right"><span class="topbar-user" id="rider-name-display"></span><button class="logout-btn" onclick="logout('rider')">Logout</button></div>
+  </div>
+  <div class="content">
+    <div class="stats-row" style="grid-template-columns:1fr 1fr">
+      <div class="stat-card"><div class="stat-num" id="rider-stat-active">0</div><div class="stat-label">Active</div></div>
+      <div class="stat-card"><div class="stat-num" id="rider-stat-done">0</div><div class="stat-label">Delivered</div></div>
+    </div>
+    <div class="card" style="margin-bottom:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <div><div class="card-title">Availability</div><div class="card-sub" id="rider-status-text">Available</div></div>
+        <button class="btn btn-accept" id="availability-btn" onclick="toggleAvailability()" style="width:auto;padding:9px 18px;font-size:0.85rem;">🟢 Available</button>
+      </div>
+    </div>
+    <div class="section-title">Accepted Orders</div>
+    <div class="section-sub">Pickup karo aur deliver karo • Auto-refresh: 15 sec</div>
+    <div id="rider-orders" style="margin-top:14px"><div class="loading-screen"><span class="loader"></span></div></div>
+  </div>
+</div>
+
+<script>
+  const SUPABASE_URL = 'https://uvizhijifovswdbyolos.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable_o3GleC6KGfM6P69cKOS2Rw_HeshPz67';
+  const { createClient } = supabase;
+  const db = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  let currentUser = null;
+  let selectedShopId = null;
+  let refreshTimer = null;
+  let rxBase64 = null;
+  let rxMediaType = null;
+  let aiMedicines = null;
+  let currentInputMethod = 'text';
+  let riderAvailable = true;
+  let cAuthMode = 'login';
+  let sAuthMode = 'login';
+  let rAuthMode = 'login';
+
+  function showToast(msg, type='') {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.className = 'show ' + type;
+    setTimeout(() => t.className = '', 3500);
+  }
+
+  function goTo(screenId) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(screenId).classList.add('active');
+  }
+
+  function setAuthTab(role, mode) {
+    if (role === 'c') {
+      cAuthMode = mode;
+      document.getElementById('c-tab-login').classList.toggle('active', mode==='login');
+      document.getElementById('c-tab-register').classList.toggle('active', mode==='register');
+      document.getElementById('c-register-fields').style.display = mode==='register' ? 'block' : 'none';
+      document.getElementById('c-login-btn').textContent = mode==='login' ? '🔑 Login' : '📝 Register Karo';
+    } else if (role === 's') {
+      sAuthMode = mode;
+      document.getElementById('s-tab-login').classList.toggle('active', mode==='login');
+      document.getElementById('s-tab-register').classList.toggle('active', mode==='register');
+      document.getElementById('s-register-fields').style.display = mode==='register' ? 'block' : 'none';
+      document.getElementById('s-login-btn').textContent = mode==='login' ? '🔑 Login' : '📝 Register Karo';
+    } else {
+      rAuthMode = mode;
+      document.getElementById('r-tab-login').classList.toggle('active', mode==='login');
+      document.getElementById('r-tab-register').classList.toggle('active', mode==='register');
+      document.getElementById('r-register-fields').style.display = mode==='register' ? 'block' : 'none';
+      document.getElementById('r-login-btn').textContent = mode==='login' ? '🔑 Login' : '📝 Register Karo';
+    }
+  }
+
+  async function loginCustomer() {
+    const phone = document.getElementById('c-phone').value.trim();
+    if (!phone || phone.length < 10) { showToast('Phone number sahi daalo', 'error'); return; }
+    const btn = document.getElementById('c-login-btn');
+    btn.disabled = true; btn.innerHTML = '<span class="loader"></span>Please wait...';
+    try {
+      if (cAuthMode === 'login') {
+        const { data } = await db.from('customers').select('*').eq('phone', phone).maybeSingle();
+        if (!data) { showToast('Phone registered nahi — pehle Register karo', 'error'); btn.disabled=false; btn.textContent='🔑 Login'; return; }
+        currentUser = data;
+      } else {
+        const name = document.getElementById('c-name').value.trim();
+        const address = document.getElementById('c-address').value.trim();
+        const area = document.getElementById('c-area').value.trim();
+        if (!name||!address||!area) { showToast('Saari details daalo', 'error'); btn.disabled=false; btn.textContent='📝 Register Karo'; return; }
+        const { data: existing } = await db.from('customers').select('id').eq('phone', phone).maybeSingle();
+        if (existing) { showToast('Ye phone already registered hai — Login karo', 'error'); btn.disabled=false; btn.textContent='📝 Register Karo'; return; }
+        const { data, error } = await db.from('customers').insert([{name, phone, address, area}]).select().single();
+        if (error) throw error;
+        currentUser = {...data, phone};
+      }
+      showCustomerDashboard();
+    } catch(e) { showToast('Error: '+(e.message||''), 'error'); btn.disabled=false; btn.textContent=cAuthMode==='login'?'🔑 Login':'📝 Register Karo'; }
+  }
+
+  async function loginShop() {
+    const phone = document.getElementById('s-phone').value.trim();
+    if (!phone || phone.length < 10) { showToast('Phone number sahi daalo', 'error'); return; }
+    const btn = document.getElementById('s-login-btn');
+    btn.disabled = true; btn.innerHTML = '<span class="loader"></span>Please wait...';
+    try {
+      if (sAuthMode === 'login') {
+        const { data } = await db.from('shops').select('*').eq('phone', phone).maybeSingle();
+        if (!data) { showToast('Phone registered nahi — pehle Register karo', 'error'); btn.disabled=false; btn.textContent='🔑 Login'; return; }
+        currentUser = data;
+      } else {
+        const ownerName = document.getElementById('s-owner-name').value.trim();
+        const shopName = document.getElementById('s-shop-name').value.trim();
+        const address = document.getElementById('s-address').value.trim();
+        const area = document.getElementById('s-area').value.trim();
+        const city = document.getElementById('s-city').value.trim();
+        if (!ownerName||!shopName||!address||!area||!city) { showToast('Saari details daalo', 'error'); btn.disabled=false; btn.textContent='📝 Register Karo'; return; }
+        const { data: existing } = await db.from('shops').select('id').eq('phone', phone).maybeSingle();
+        if (existing) { showToast('Ye phone already registered hai — Login karo', 'error'); btn.disabled=false; btn.textContent='📝 Register Karo'; return; }
+        const { data, error } = await db.from('shops').insert([{name:shopName, owner_name:ownerName, phone, address, area, city}]).select().single();
+        if (error) throw error;
+        currentUser = data;
+      }
+      showShopDashboard();
+    } catch(e) { showToast('Error: '+(e.message||''), 'error'); btn.disabled=false; btn.textContent=sAuthMode==='login'?'🔑 Login':'📝 Register Karo'; }
+  }
+
+  async function loginRider() {
+    const phone = document.getElementById('r-phone').value.trim();
+    if (!phone || phone.length < 10) { showToast('Phone number sahi daalo', 'error'); return; }
+    const btn = document.getElementById('r-login-btn');
+    btn.disabled = true; btn.innerHTML = '<span class="loader"></span>Please wait...';
+    try {
+      if (rAuthMode === 'login') {
+        const { data } = await db.from('riders').select('*').eq('phone', phone).maybeSingle();
+        if (!data) { showToast('Phone registered nahi — pehle Register karo', 'error'); btn.disabled=false; btn.textContent='🔑 Login'; return; }
+        currentUser = data; riderAvailable = data.is_available ?? true;
+      } else {
+        const name = document.getElementById('r-name').value.trim();
+        const area = document.getElementById('r-area').value.trim();
+        const city = document.getElementById('r-city').value.trim();
+        if (!name||!area||!city) { showToast('Saari details daalo', 'error'); btn.disabled=false; btn.textContent='📝 Register Karo'; return; }
+        const { data: existing } = await db.from('riders').select('id').eq('phone', phone).maybeSingle();
+        if (existing) { showToast('Ye phone already registered hai — Login karo', 'error'); btn.disabled=false; btn.textContent='📝 Register Karo'; return; }
+        const { data, error } = await db.from('riders').insert([{name, phone, current_area:area, is_available:true}]).select().single();
+        if (error) throw error;
+        currentUser = data; riderAvailable = true;
+      }
+      showRiderDashboard();
+    } catch(e) { showToast('Error: '+(e.message||''), 'error'); btn.disabled=false; btn.textContent=rAuthMode==='login'?'🔑 Login':'📝 Register Karo'; }
+  }
+
+  function showCustomerDashboard() {
+    goTo('customer-screen');
+    document.getElementById('customer-name-display').textContent = currentUser.name;
+    document.getElementById('order-address').value = currentUser.address || '';
+    loadShops(); loadCustomerOrders();
+  }
+
+  function showShopDashboard() {
+    goTo('shop-screen');
+    document.getElementById('shop-name-display').textContent = currentUser.owner_name || currentUser.name;
+    loadShopOrders();
+    if (refreshTimer) clearInterval(refreshTimer);
+    refreshTimer = setInterval(loadShopOrders, 15000);
+  }
+
+  function showRiderDashboard() {
+    goTo('rider-screen');
+    document.getElementById('rider-name-display').textContent = currentUser.name;
+    updateAvailabilityUI();
+    loadRiderOrders();
+    if (refreshTimer) clearInterval(refreshTimer);
+    refreshTimer = setInterval(loadRiderOrders, 15000);
+  }
+
+  function logout(role) {
+    currentUser = null; selectedShopId = null; rxBase64 = null; aiMedicines = null;
+    currentInputMethod = 'text';
+    if (refreshTimer) clearInterval(refreshTimer);
+    try {
+      document.getElementById('method-text').classList.add('active');
+      document.getElementById('method-photo').classList.remove('active');
+      document.getElementById('text-method').style.display = 'block';
+      document.getElementById('photo-method').style.display = 'none';
+      document.getElementById('rx-preview').style.display = 'none';
+      document.getElementById('ai-result-box').style.display = 'none';
+      document.getElementById('photo-ok-msg').style.display = 'none';
+      document.getElementById('order-medicines').value = '';
+      document.getElementById('order-notes').value = '';
+      document.getElementById('order-address').value = '';
+      const rxFile = document.getElementById('rx-file');
+      if (rxFile) rxFile.value = '';
+    } catch(e) {}
+    goTo(role === 'customer' ? 'customer-login-screen' : role === 'shop' ? 'shop-login-screen' : 'rider-login-screen');
+    showToast('Logged out!');
+  }
+
+  function setInputMethod(method) {
+    currentInputMethod = method;
+    document.getElementById('method-text').classList.toggle('active', method==='text');
+    document.getElementById('method-photo').classList.toggle('active', method==='photo');
+    document.getElementById('text-method').style.display = method==='text' ? 'block' : 'none';
+    document.getElementById('photo-method').style.display = method==='photo' ? 'block' : 'none';
+    if (method==='text') { rxBase64=null; aiMedicines=null; }
+  }
+
+  function handleRxUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    rxMediaType = file.type || 'image/jpeg';
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const result = e.target.result;
+      rxBase64 = result.split(',')[1];
+      const preview = document.getElementById('rx-preview');
+      preview.src = result; preview.style.display = 'block';
+      document.getElementById('rx-upload-box').style.borderColor = 'var(--green-light)';
+      document.getElementById('photo-ok-msg').style.display = 'block';
+      await scanWithAI();
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function scanWithAI() {
+    document.getElementById('ai-scanning').style.display = 'block';
+    document.getElementById('ai-result-box').style.display = 'none';
+    try {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-6', max_tokens: 1000,
+          messages: [{ role: 'user', content: [
+            { type: 'image', source: { type: 'base64', media_type: rxMediaType, data: rxBase64 } },
+            { type: 'text', text: 'Medical prescription hai. Medicines list karo. Format: Medicine Name - Dose - Quantity. Sirf medicines, koi extra text nahi.' }
+          ]}]
+        })
+      });
+      const data = await response.json();
+      const text = data.content?.map(c => c.text||'').join('') || '';
+      if (text) {
+        aiMedicines = text;
+        document.getElementById('ai-result-text').textContent = text;
+        document.getElementById('ai-result-box').style.display = 'block';
+        showToast('AI ne medicines pad li! ✨', 'success');
+      }
+    } catch(e) { aiMedicines = null; }
+    finally { document.getElementById('ai-scanning').style.display = 'none'; }
+  }
+
+  async function loadShops() {
+    const el = document.getElementById('shops-list');
+    try {
+      const { data: shops } = await db.from('shops').select('*').eq('is_active', true);
+      if (!shops?.length) { el.innerHTML = '<div style="color:var(--text-muted);font-size:0.82rem;padding:10px 0;">Abhi koi shop registered nahi hai</div>'; return; }
+      el.innerHTML = shops.map(s => `<div class="shop-option" onclick="selectShop('${s.id}',this)"><div class="shop-option-name">🏪 ${s.name}</div><div class="shop-option-area">📍 ${s.area}, ${s.city}</div></div>`).join('');
+    } catch(e) { el.innerHTML = '<div style="color:var(--red);">Shops load nahi hui</div>'; }
+  }
+
+  function selectShop(id, el) {
+    document.querySelectorAll('.shop-option').forEach(s => s.classList.remove('selected'));
+    el.classList.add('selected'); selectedShopId = id;
+  }
+
+  async function placeOrder() {
+    if (!selectedShopId) { showToast('Ek shop select karo', 'error'); return; }
+    const address = document.getElementById('order-address').value.trim();
+    if (!address) { showToast('Address daalo', 'error'); return; }
+    let medicines = '', prescriptionData = null;
+    if (currentInputMethod === 'text') {
+      medicines = document.getElementById('order-medicines').value.trim();
+      if (!medicines) { showToast('Medicines likhlo', 'error'); return; }
+    } else {
+      if (!rxBase64) { showToast('Prescription photo upload karo', 'error'); return; }
+      medicines = aiMedicines || '📷 Prescription attached — shop owner dekhe';
+      // Only store image if under 1MB to avoid DB limits
+      const sizeKB = Math.round((rxBase64.length * 0.75) / 1024);
+      if (sizeKB < 1024) {
+        prescriptionData = `data:${rxMediaType};base64,${rxBase64}`;
+      } else {
+        showToast('Photo size zyada hai — compress karke try karo', 'error');
+        btn.disabled=false; btn.textContent='Order Place Karo 🛵'; return;
+      }
+    }
+    const notes = document.getElementById('order-notes').value.trim();
+    const btn = document.getElementById('order-btn');
+    btn.disabled=true; btn.innerHTML='<span class="loader"></span>Place ho raha hai...';
+    try {
+      const { error } = await db.from('orders').insert([{
+        customer_id: currentUser.id, shop_id: selectedShopId, medicines,
+        delivery_address: address, status: 'pending',
+        notes: prescriptionData ? (notes?notes+'||RX||':'||RX||')+prescriptionData : (notes||null)
+      }]);
+      if (error) throw error;
+
+      // WhatsApp notification to shop owner
+      try {
+        const { data: shopData } = await db.from('shops').select('phone, name').eq('id', selectedShopId).single();
+        if (shopData?.phone) {
+          const waMsg = encodeURIComponent(
+            `🆕 *New Order — MedMitra*\n\n` +
+            `👤 *Customer:* ${currentUser.name}\n` +
+            `📞 *Phone:* ${currentUser.phone || 'N/A'}\n` +
+            `💊 *Medicines:* ${medicines}\n` +
+            `📍 *Address:* ${address}\n` +
+            `${notes ? `📝 *Note:* ${notes}\n` : ''}` +
+            `\n_MedMitra App se aaya order_`
+          );
+          const waNumber = '91' + shopData.phone.replace(/\D/g, '').slice(-10);
+          window.open(`https://wa.me/${waNumber}?text=${waMsg}`, '_blank');
+        }
+      } catch(waErr) { /* WhatsApp optional */ }
+
+      showToast('Order place ho gaya! 🎉', 'success');
+      document.getElementById('order-medicines').value='';
+      document.getElementById('order-notes').value='';
+      document.getElementById('ai-result-box').style.display='none';
+      document.getElementById('rx-preview').style.display='none';
+      document.getElementById('photo-ok-msg').style.display='none';
+      document.getElementById('rx-upload-box').style.borderColor='';
+      rxBase64=null; aiMedicines=null; selectedShopId=null;
+      const rxFile = document.getElementById('rx-file');
+      if (rxFile) rxFile.value = '';
+      document.querySelectorAll('.shop-option').forEach(s=>s.classList.remove('selected'));
+      loadCustomerOrders();
+    } catch(e) { showToast('Order nahi hua: '+(e.message||''), 'error'); }
+    finally { btn.disabled=false; btn.textContent='Order Place Karo 🛵'; }
+  }
+
+  function extractRx(notes) {
+    if (!notes||!notes.includes('||RX||')) return { cleanNotes:notes, rxData:null };
+    const parts = notes.split('||RX||');
+    return { cleanNotes:parts[0]||null, rxData:parts[1] };
+  }
+
+  async function loadCustomerOrders() {
+    const el = document.getElementById('customer-orders');
+    try {
+      const { data: orders } = await db.from('orders').select('*, shops(name,area)').eq('customer_id', currentUser.id).order('created_at',{ascending:false});
+      if (!orders?.length) { el.innerHTML='<div class="empty"><div class="empty-icon">📦</div><div class="empty-text">Abhi koi order nahi hai<br/>Upar se pehla order karo!</div></div>'; return; }
+      el.innerHTML = orders.map(o => {
+        const {cleanNotes,rxData} = extractRx(o.notes);
+        return `<div class="card"><div class="card-header"><div><div class="card-title">Order #${o.id.slice(-6).toUpperCase()}</div><div class="card-sub">🏪 ${o.shops?.name||''} • ${o.shops?.area||''}</div></div><span class="badge badge-${o.status}">${statusLabel(o.status)}</span></div><div class="card-detail"><strong>Medicines:</strong> ${o.medicines}</div><div class="card-detail"><strong>Delivery:</strong> ${o.delivery_address}</div>${cleanNotes?`<div class="card-detail"><strong>Note:</strong> ${cleanNotes}</div>`:''}${rxData?`<div class="card-detail"><strong>Prescription:</strong><br/><img src="${rxData}" class="rx-img" onclick="openModal('${rxData}')" /></div>`:''}<div class="card-detail" style="color:var(--text-muted);font-size:0.75rem;">${formatDate(o.created_at)}</div></div>`;
+      }).join('');
+    } catch(e) { el.innerHTML='<div style="color:var(--red);padding:20px;">Orders load nahi hui</div>'; }
+  }
+
+  async function loadShopOrders() {
+    const el = document.getElementById('shop-orders');
+    try {
+      const { data: orders } = await db.from('orders').select('*, customers(name,phone)').eq('shop_id', currentUser.id).order('created_at',{ascending:false});
+      document.getElementById('stat-pending').textContent = orders?.filter(o=>o.status==='pending').length||0;
+      document.getElementById('stat-accepted').textContent = orders?.filter(o=>o.status==='accepted').length||0;
+      document.getElementById('stat-delivered').textContent = orders?.filter(o=>o.status==='delivered').length||0;
+      if (!orders?.length) { el.innerHTML='<div class="empty"><div class="empty-icon">⏳</div><div class="empty-text">Abhi koi order nahi aaya</div></div>'; return; }
+      el.innerHTML = orders.map(o => {
+        const {cleanNotes,rxData} = extractRx(o.notes);
+        return `<div class="card"><div class="card-header"><div><div class="card-title">Order #${o.id.slice(-6).toUpperCase()}</div><div class="card-sub">👤 ${o.customers?.name||''} • 📞 ${o.customers?.phone||''}</div></div><span class="badge badge-${o.status}">${statusLabel(o.status)}</span></div><div class="card-detail"><strong>Medicines:</strong> ${o.medicines}</div><div class="card-detail"><strong>Address:</strong> ${o.delivery_address}</div>${cleanNotes?`<div class="card-detail"><strong>Note:</strong> ${cleanNotes}</div>`:''}${rxData?`<div class="card-detail"><strong>Prescription 📄</strong><br/><img src="${rxData}" class="rx-img" onclick="openModal('${rxData}')" /></div>`:''}<div class="card-detail" style="color:var(--text-muted);font-size:0.75rem;">${formatDate(o.created_at)}</div>${o.status==='pending'?`<div class="card-actions"><button class="btn btn-accept" onclick="updateOrder('${o.id}','accepted')">✅ Accept</button><button class="btn btn-red" onclick="updateOrder('${o.id}','rejected')">❌ Reject</button></div>`:''}${o.status==='accepted'?`<div class="card-actions"><button class="btn btn-saffron" onclick="updateOrder('${o.id}','delivered')">🛵 Mark Delivered</button></div>`:''}</div>`;
+      }).join('');
+    } catch(e) { el.innerHTML='<div style="color:var(--red);padding:20px;">Orders load nahi hui</div>'; }
+  }
+
+  async function loadRiderOrders() {
+    const el = document.getElementById('rider-orders');
+    try {
+      const { data: orders } = await db.from('orders').select('*, shops(name,area,address), customers(name,phone)').in('status',['accepted','delivered']).order('created_at',{ascending:false});
+      document.getElementById('rider-stat-active').textContent = orders?.filter(o=>o.status==='accepted').length||0;
+      document.getElementById('rider-stat-done').textContent = orders?.filter(o=>o.status==='delivered').length||0;
+      if (!orders?.length) { el.innerHTML='<div class="empty"><div class="empty-icon">🛵</div><div class="empty-text">Koi order pickup ke liye nahi hai abhi</div></div>'; return; }
+      el.innerHTML = orders.map(o=>`<div class="card"><div class="card-header"><div><div class="card-title">Order #${o.id.slice(-6).toUpperCase()}</div><div class="card-sub">👤 ${o.customers?.name||''} • 📞 ${o.customers?.phone||''}</div></div><span class="badge badge-${o.status}">${statusLabel(o.status)}</span></div><div class="card-detail"><strong>Pickup:</strong> 🏪 ${o.shops?.name||''}, ${o.shops?.area||''}</div><div class="card-detail"><strong>Deliver:</strong> 📍 ${o.delivery_address}</div><div class="card-detail"><strong>Medicines:</strong> ${o.medicines}</div><div class="card-detail" style="color:var(--text-muted);font-size:0.75rem;">${formatDate(o.created_at)}</div>${o.status==='accepted'?`<div class="card-actions"><button class="btn btn-green" onclick="updateOrder('${o.id}','delivered')">✅ Mark Delivered</button></div>`:''}</div>`).join('');
+    } catch(e) { el.innerHTML='<div style="color:var(--red);padding:20px;">Orders load nahi hui</div>'; }
+  }
+
+  async function toggleAvailability() {
+    riderAvailable = !riderAvailable;
+    try {
+      await db.from('riders').update({is_available:riderAvailable}).eq('id', currentUser.id);
+      updateAvailabilityUI();
+      showToast(riderAvailable ? 'Ab available ho! 🟢' : 'Ab offline ho 🔴', riderAvailable?'success':'');
+    } catch(e) { riderAvailable=!riderAvailable; showToast('Update nahi hua','error'); }
+  }
+
+  function updateAvailabilityUI() {
+    const btn = document.getElementById('availability-btn');
+    const txt = document.getElementById('rider-status-text');
+    if (riderAvailable) { btn.textContent='🟢 Available'; btn.className='btn btn-accept'; btn.style.cssText='width:auto;padding:9px 18px;font-size:0.85rem;'; txt.textContent='Abhi available hoon'; }
+    else { btn.textContent='🔴 Offline'; btn.className='btn btn-red'; btn.style.cssText='width:auto;padding:9px 18px;font-size:0.85rem;'; txt.textContent='Abhi offline hoon'; }
+  }
+
+  async function updateOrder(id, status) {
+    try {
+      const { error } = await db.from('orders').update({status}).eq('id', id);
+      if (error) throw error;
+      showToast(`Order ${statusLabel(status)}! ✅`, 'success');
+      const activeScreen = document.querySelector('.screen.active')?.id;
+      if (activeScreen==='shop-screen') loadShopOrders();
+      else loadRiderOrders();
+    } catch(e) { showToast('Update nahi hua','error'); }
+  }
+
+  function openModal(src) { document.getElementById('modal-img').src=src; document.getElementById('img-modal').classList.add('open'); }
+  function closeModal() { document.getElementById('img-modal').classList.remove('open'); }
+  function statusLabel(s) { return {pending:'Pending',accepted:'Accepted',delivered:'Delivered',rejected:'Rejected'}[s]||s; }
+  function formatDate(d) { return new Date(d).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}); }
+</script>
+</body>
+</html>
