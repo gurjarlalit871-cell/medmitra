@@ -446,6 +446,15 @@
         <div class="form-group"><label>Shop Address</label><input type="text" id="s-address" placeholder="Dukaan ka address" /></div>
         <div class="form-group"><label>Area / Mohalla</label><input type="text" id="s-area" placeholder="Jaise: Shastri Nagar" /></div>
         <div class="form-group"><label>City</label><input type="text" id="s-city" placeholder="Aapka shehar" /></div>
+        <div class="form-group">
+          <label>Shop GPS Location</label>
+          <div style="display:flex;gap:8px">
+            <input type="text" id="s-lat" placeholder="Latitude" style="flex:1" readonly />
+            <input type="text" id="s-lng" placeholder="Longitude" style="flex:1" readonly />
+            <button onclick="getShopGPS()" style="background:var(--green-light);border:none;border-radius:8px;padding:10px 12px;cursor:pointer;font-size:1rem;" id="shop-gps-btn">📍</button>
+          </div>
+          <div id="shop-gps-status" style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;"></div>
+        </div>
       </div>
       <button class="btn btn-green" onclick="loginShop()" id="s-login-btn">🔑 Login</button>
       <div class="auth-toggle">Naya account? <a href="javascript:void(0)" onclick="setAuthTab('s','register')">Register karo</a></div>
@@ -503,7 +512,14 @@
         <div class="ai-result" id="ai-result-box"><div class="ai-result-title">✨ AI ne ye medicines padhi</div><div class="ai-result-text" id="ai-result-text"></div></div>
         <div id="photo-ok-msg" style="display:none;margin-top:10px;padding:10px 14px;background:rgba(34,160,90,0.08);border:1px solid rgba(34,160,90,0.2);border-radius:8px;font-size:0.82rem;color:var(--green-light);">✅ Photo upload ho gayi — bas address aur shop select karo!</div>
       </div>
-      <div class="form-group" style="margin-top:14px"><label>Delivery Address</label><input type="text" id="order-address" placeholder="Ghar ka address" /></div>
+      <div class="form-group" style="margin-top:14px">
+        <label>Delivery Address</label>
+        <div style="display:flex;gap:8px">
+          <input type="text" id="order-address" placeholder="Ghar ka address" style="flex:1" />
+          <button onclick="getGPSLocation()" id="gps-btn" style="background:var(--green-light);border:none;border-radius:8px;padding:10px 12px;cursor:pointer;font-size:1rem;white-space:nowrap;" title="GPS se location lo">📍</button>
+        </div>
+        <div id="gps-status" style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;display:none;"></div>
+      </div>
       <div class="form-group"><label>Note (Optional)</label><input type="text" id="order-notes" placeholder="Jaise: urgent hai, generic dena" /></div>
       <div class="form-group"><label>Shop Select Karo</label><div id="shops-list"><div class="loading-screen"><span class="loader"></span> Shops load ho rahi hain...</div></div></div>
       <button class="btn btn-green" onclick="placeOrder()" id="order-btn">Order Place Karo 🛵</button>
@@ -544,8 +560,8 @@
   </div>
   <div class="content">
     <div class="stats-row" style="grid-template-columns:1fr 1fr">
-      <div class="stat-card"><div class="stat-num" id="rider-stat-active">0</div><div class="stat-label">Active</div></div>
-      <div class="stat-card"><div class="stat-num" id="rider-stat-done">0</div><div class="stat-label">Delivered</div></div>
+      <div class="stat-card"><div class="stat-num" id="rider-stat-active">0</div><div class="stat-label">7 Din Deliveries</div></div>
+      <div class="stat-card"><div class="stat-num" id="rider-stat-done">₹0</div><div class="stat-label">7 Din Earnings</div></div>
     </div>
     <div class="card" style="margin-bottom:16px">
       <div style="display:flex;align-items:center;justify-content:space-between;">
@@ -707,8 +723,9 @@
     document.getElementById('rider-name-display').textContent = currentUser.name;
     updateAvailabilityUI();
     loadRiderOrders();
+    loadRiderEarnings();
     if (refreshTimer) clearInterval(refreshTimer);
-    refreshTimer = setInterval(loadRiderOrders, 15000);
+    refreshTimer = setInterval(() => { loadRiderOrders(); loadRiderEarnings(); }, 15000);
   }
 
   function logout(role) {
@@ -786,6 +803,116 @@
     finally { document.getElementById('ai-scanning').style.display = 'none'; }
   }
 
+  // ===== GPS LOCATION =====
+  function getShopGPS() {
+    const btn = document.getElementById('shop-gps-btn');
+    const status = document.getElementById('shop-gps-status');
+    if (!btn) return;
+    btn.textContent = '⏳'; btn.disabled = true;
+    status.textContent = 'Location dhundh raha hai...';
+    navigator.geolocation.getCurrentPosition((pos) => {
+      document.getElementById('s-lat').value = pos.coords.latitude.toFixed(6);
+      document.getElementById('s-lng').value = pos.coords.longitude.toFixed(6);
+      status.textContent = '✅ Shop location save ho gayi!';
+      status.style.color = 'var(--green-light)';
+      btn.textContent = '📍'; btn.disabled = false;
+    }, () => {
+      status.textContent = '❌ Location access denied — manually lat/lng daalo';
+      btn.textContent = '📍'; btn.disabled = false;
+    });
+  }
+
+  async function getGPSLocation() {
+    const btn = document.getElementById('gps-btn');
+    const status = document.getElementById('gps-status');
+    btn.textContent = '⏳'; btn.disabled = true;
+    status.style.display = 'block';
+    status.textContent = 'Location dhundh raha hai...';
+    if (!navigator.geolocation) {
+      status.textContent = 'GPS supported nahi hai is device pe';
+      btn.textContent = '📍'; btn.disabled = false; return;
+    }
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      try {
+        const { latitude: lat, longitude: lng } = pos.coords;
+        // Save customer GPS to DB
+        if (currentUser?.id) {
+          await db.from('customers').update({ lat: lat.toString(), lng: lng.toString() }).eq('id', currentUser.id);
+        }
+        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`);
+        const data = await res.json();
+        const addr = data.display_name || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+        document.getElementById('order-address').value = addr;
+        status.textContent = '✅ Location mil gayi!';
+        status.style.color = 'var(--green-light)';
+      } catch(e) {
+        status.textContent = 'Address nahi mila — manually likho';
+      }
+      btn.textContent = '📍'; btn.disabled = false;
+    }, (err) => {
+      status.textContent = 'Location access denied — manually likho';
+      btn.textContent = '📍'; btn.disabled = false;
+    });
+  }
+
+  // ===== ORDER TIMER + AUTO TRANSFER =====
+  let orderTimerInterval = null;
+  let pendingOrderId = null;
+  let shopQueue = [];
+  let currentShopIndex = 0;
+
+  async function startOrderTimer(orderId, allShops) {
+    pendingOrderId = orderId;
+    shopQueue = allShops;
+    currentShopIndex = 0;
+    waitForAcceptance(orderId, allShops[0]);
+  }
+
+  async function waitForAcceptance(orderId, shop) {
+    let seconds = 30;
+    const toastEl = document.getElementById('toast');
+
+    // Show timer toast
+    showTimerToast(seconds, shop.name);
+    orderTimerInterval = setInterval(async () => {
+      seconds--;
+      showTimerToast(seconds, shop.name);
+
+      // Check if accepted
+      const { data: order } = await db.from('orders').select('status').eq('id', orderId).single();
+      if (order?.status === 'accepted' || order?.status === 'delivered') {
+        clearInterval(orderTimerInterval);
+        document.getElementById('toast').className = '';
+        showToast('Order accept ho gaya! 🎉', 'success');
+        loadCustomerOrders();
+        return;
+      }
+
+      if (order?.status === 'rejected' || seconds <= 0) {
+        clearInterval(orderTimerInterval);
+        currentShopIndex++;
+        if (currentShopIndex < shopQueue.length) {
+          // Transfer to next shop
+          const nextShop = shopQueue[currentShopIndex];
+          await db.from('orders').update({ shop_id: nextShop.id, status: 'pending' }).eq('id', orderId);
+          showToast(`${shop.name} ne nahi liya — ${nextShop.name} pe transfer! 🔄`, '');
+          setTimeout(() => waitForAcceptance(orderId, nextShop), 1000);
+        } else {
+          // No shop available
+          await db.from('orders').update({ status: 'rejected' }).eq('id', orderId);
+          showToast('Koi shop available nahi hai abhi 😞', 'error');
+          loadCustomerOrders();
+        }
+      }
+    }, 1000);
+  }
+
+  function showTimerToast(seconds, shopName) {
+    const t = document.getElementById('toast');
+    t.innerHTML = `⏱️ <strong>${shopName}</strong> — ${seconds}s mein accept nahi kiya toh next shop`;
+    t.className = 'show';
+  }
+
   async function loadShops() {
     const el = document.getElementById('shops-list');
     try {
@@ -850,6 +977,17 @@
       } catch(waErr) { /* WhatsApp optional */ }
 
       showToast('Order place ho gaya! 🎉', 'success');
+
+      // Start 30-sec timer for auto-transfer
+      const { data: allShops } = await db.from('shops').select('*').eq('is_active', true);
+      if (allShops && allShops.length > 1) {
+        const orderId = (await db.from('orders').select('id').eq('customer_id', currentUser.id).order('created_at', {ascending: false}).limit(1).single()).data?.id;
+        if (orderId) {
+          const otherShops = allShops.filter(s => s.id !== selectedShopId);
+          const selectedShop = allShops.find(s => s.id === selectedShopId);
+          await startOrderTimer(orderId, [selectedShop, ...otherShops]);
+        }
+      }
       document.getElementById('order-medicines').value='';
       document.getElementById('order-notes').value='';
       document.getElementById('ai-result-box').style.display='none';
@@ -893,7 +1031,34 @@
       if (!orders?.length) { el.innerHTML='<div class="empty"><div class="empty-icon">⏳</div><div class="empty-text">Abhi koi order nahi aaya</div></div>'; return; }
       el.innerHTML = orders.map(o => {
         const {cleanNotes,rxData} = extractRx(o.notes);
-        return `<div class="card"><div class="card-header"><div><div class="card-title">Order #${o.id.slice(-6).toUpperCase()}</div><div class="card-sub">👤 ${o.customers?.name||''} • 📞 ${o.customers?.phone||''}</div></div><span class="badge badge-${o.status}">${statusLabel(o.status)}</span></div><div class="card-detail"><strong>Medicines:</strong> ${o.medicines}</div><div class="card-detail"><strong>Address:</strong> ${o.delivery_address}</div>${cleanNotes?`<div class="card-detail"><strong>Note:</strong> ${cleanNotes}</div>`:''}${rxData?`<div class="card-detail"><strong>Prescription 📄</strong><br/><img src="${rxData}" class="rx-img" onclick="openModal('${rxData}')" /></div>`:''}<div class="card-detail" style="color:var(--text-muted);font-size:0.75rem;">${formatDate(o.created_at)}</div>${o.status==='pending'?`<div class="card-actions"><button class="btn btn-accept" onclick="updateOrder('${o.id}','accepted')">✅ Accept</button><button class="btn btn-red" onclick="updateOrder('${o.id}','rejected')">❌ Reject</button></div>`:''}${o.status==='accepted'?`<div class="card-actions"><button class="btn btn-saffron" onclick="updateOrder('${o.id}','delivered')">🛵 Mark Delivered</button></div>`:''}</div>`;
+        return `<div class="card"><div class="card-header"><div><div class="card-title">Order #${o.id.slice(-6).toUpperCase()}</div><div class="card-sub">👤 ${o.customers?.name||''} • 📞 ${o.customers?.phone||''}</div></div><span class="badge badge-${o.status}">${statusLabel(o.status)}</span></div><div class="card-detail"><strong>Medicines:</strong> ${o.medicines}</div><div class="card-detail"><strong>Address:</strong> ${o.delivery_address}</div>${cleanNotes?`<div class="card-detail"><strong>Note:</strong> ${cleanNotes}</div>`:''}${rxData?`<div class="card-detail"><strong>Prescription 📄</strong><br/><img src="${rxData}" class="rx-img" onclick="openModal('${rxData}')" /></div>`:''}<div class="card-detail" style="color:var(--text-muted);font-size:0.75rem;">${formatDate(o.created_at)}</div>
+        ${o.total_amount ? `
+          <div style="margin-top:10px;padding:12px;background:rgba(34,160,90,0.08);border:1px solid rgba(34,160,90,0.2);border-radius:10px;">
+            <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;">💰 BILL BREAKDOWN</div>
+            <div style="font-size:0.85rem;color:#C8D8E8;">Medicine: ₹${o.medicine_amount||'?'}</div>
+            <div style="font-size:0.85rem;color:#C8D8E8;">Delivery: ₹${o.delivery_charge||'?'}</div>
+            <div style="font-size:0.85rem;color:#C8D8E8;">Platform: ₹5</div>
+            <div style="font-size:1rem;font-weight:700;color:var(--green-light);margin-top:6px;">Total: ₹${o.total_amount}</div>
+          </div>` : ''}
+        ${o.status==='accepted'?`
+          <div style="margin-top:12px;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:10px;padding:14px;">
+            <div style="font-size:0.8rem;color:var(--text-muted);font-weight:600;margin-bottom:10px;">💰 BILL BANAO</div>
+            <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+              <span style="font-size:0.82rem;color:var(--text-muted);white-space:nowrap;">₹ Medicine:</span>
+              <input type="number" id="amt-${o.id}" placeholder="0" oninput="previewBill('${o.id}')" style="flex:1;padding:9px;background:var(--navy);border:1.5px solid var(--border);border-radius:8px;color:#fff;font-size:0.95rem;" />
+            </div>
+            <div id="bill-preview-${o.id}" style="display:none;padding:10px;background:rgba(34,160,90,0.08);border:1px solid rgba(34,160,90,0.2);border-radius:8px;margin-bottom:8px;font-size:0.85rem;color:#C8D8E8;"></div>
+            <div style="display:flex;gap:8px;">
+              <button onclick="saveBillAmount('${o.id}')" style="flex:1;background:var(--saffron);border:none;border-radius:8px;padding:10px;color:var(--navy);font-weight:700;font-size:0.88rem;cursor:pointer;">💾 Bill Save Karo</button>
+              <label style="flex:1;background:var(--navy-mid);border:1px solid var(--border);border-radius:8px;padding:10px;color:#fff;font-size:0.82rem;cursor:pointer;text-align:center;display:flex;align-items:center;justify-content:center;gap:4px;">
+                📸 Bill Pic
+                <input type="file" accept="image/*" onchange="uploadBill(event,'${o.id}','${o.customers?.phone||''}','${o.delivery_address}')" style="display:none;" />
+              </label>
+            </div>
+          </div>
+          <div class="card-actions" style="margin-top:10px"><button class="btn btn-saffron" onclick="updateOrder('${o.id}','delivered')">🛵 Mark Delivered</button></div>
+        `:''}
+        ${o.status==='pending'?`<div class="card-actions"><button class="btn btn-accept" onclick="updateOrder('${o.id}','accepted')">✅ Accept</button><button class="btn btn-red" onclick="updateOrder('${o.id}','rejected')">❌ Reject</button></div>`:''}</div>`;
       }).join('');
     } catch(e) { el.innerHTML='<div style="color:var(--red);padding:20px;">Orders load nahi hui</div>'; }
   }
@@ -905,7 +1070,13 @@
       document.getElementById('rider-stat-active').textContent = orders?.filter(o=>o.status==='accepted').length||0;
       document.getElementById('rider-stat-done').textContent = orders?.filter(o=>o.status==='delivered').length||0;
       if (!orders?.length) { el.innerHTML='<div class="empty"><div class="empty-icon">🛵</div><div class="empty-text">Koi order pickup ke liye nahi hai abhi</div></div>'; return; }
-      el.innerHTML = orders.map(o=>`<div class="card"><div class="card-header"><div><div class="card-title">Order #${o.id.slice(-6).toUpperCase()}</div><div class="card-sub">👤 ${o.customers?.name||''} • 📞 ${o.customers?.phone||''}</div></div><span class="badge badge-${o.status}">${statusLabel(o.status)}</span></div><div class="card-detail"><strong>Pickup:</strong> 🏪 ${o.shops?.name||''}, ${o.shops?.area||''}</div><div class="card-detail"><strong>Deliver:</strong> 📍 ${o.delivery_address}</div><div class="card-detail"><strong>Medicines:</strong> ${o.medicines}</div><div class="card-detail" style="color:var(--text-muted);font-size:0.75rem;">${formatDate(o.created_at)}</div>${o.status==='accepted'?`<div class="card-actions"><button class="btn btn-green" onclick="updateOrder('${o.id}','delivered')">✅ Mark Delivered</button></div>`:''}</div>`).join('');
+      el.innerHTML = orders.map(o=>`<div class="card"><div class="card-header"><div><div class="card-title">Order #${o.id.slice(-6).toUpperCase()}</div><div class="card-sub">👤 ${o.customers?.name||''} • 📞 ${o.customers?.phone||''}</div></div><span class="badge badge-${o.status}">${statusLabel(o.status)}</span></div><div class="card-detail"><strong>Pickup:</strong> 🏪 ${o.shops?.name||''}, ${o.shops?.area||''}</div><div class="card-detail"><strong>Deliver:</strong> 📍 ${o.delivery_address}</div><div class="card-detail"><strong>Medicines:</strong> ${o.medicines}</div><div class="card-detail" style="color:var(--text-muted);font-size:0.75rem;">${formatDate(o.created_at)}</div>${o.status==='accepted'?`
+        <div class="form-group" style="margin-top:12px">
+          <label style="font-size:0.78rem;color:var(--text-muted)">📸 Bill Photo Upload Karo</label>
+          <input type="file" accept="image/*" onchange="uploadBill(event,'${o.id}','${o.customers?.phone||''}','${o.delivery_address}')" style="width:100%;padding:8px;background:rgba(255,255,255,0.05);border:1px dashed var(--border);border-radius:8px;color:var(--white);font-size:0.82rem;margin-top:6px;" />
+        </div>
+        <div class="card-actions"><button class="btn btn-green" onclick="updateOrder('${o.id}','delivered')">✅ Mark Delivered</button></div>
+      `:''}</div>`).join('');
     } catch(e) { el.innerHTML='<div style="color:var(--red);padding:20px;">Orders load nahi hui</div>'; }
   }
 
@@ -923,6 +1094,136 @@
     const txt = document.getElementById('rider-status-text');
     if (riderAvailable) { btn.textContent='🟢 Available'; btn.className='btn btn-accept'; btn.style.cssText='width:auto;padding:9px 18px;font-size:0.85rem;'; txt.textContent='Abhi available hoon'; }
     else { btn.textContent='🔴 Offline'; btn.className='btn btn-red'; btn.style.cssText='width:auto;padding:9px 18px;font-size:0.85rem;'; txt.textContent='Abhi offline hoon'; }
+  }
+
+  async function uploadBill(event, orderId, customerPhone, deliveryAddress) {
+    const file = event.target.files[0];
+    if (!file) return;
+    showToast('Bill upload ho raha hai...', '');
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const billData = e.target.result;
+      try {
+        // Save bill in order notes
+        await db.from('orders').update({ notes: (await db.from('orders').select('notes').eq('id', orderId).single()).data?.notes + '||BILL||' + billData }).eq('id', orderId);
+        // Send WhatsApp to customer with bill
+        if (customerPhone) {
+          const waMsg = encodeURIComponent(`🧾 *MedMitra — Aapka Bill*\n\n📍 Delivery: ${deliveryAddress}\n\nBill attached hai — payment karo:\n💳 UPI: medmitra@upi\n\n_MedMitra_`);
+          const waNum = '91' + customerPhone.replace(/\D/g,'').slice(-10);
+          window.open(`https://wa.me/${waNum}?text=${waMsg}`, '_blank');
+        }
+        showToast('Bill upload ho gaya! WhatsApp khul raha hai 📱', 'success');
+      } catch(e) { showToast('Bill upload nahi hua', 'error'); }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function addBillRow(orderId) {
+    const container = document.getElementById('bill-items-' + orderId);
+    const row = document.createElement('div');
+    row.className = 'bill-row';
+    row.style.cssText = 'display:flex;gap:6px;margin-bottom:6px;';
+    row.innerHTML = `
+      <input type="text" placeholder="Item naam" style="flex:2;padding:8px;background:var(--navy);border:1px solid var(--border);border-radius:6px;color:#fff;font-size:0.82rem;" />
+      <input type="number" placeholder="₹" style="flex:1;padding:8px;background:var(--navy);border:1px solid var(--border);border-radius:6px;color:#fff;font-size:0.82rem;" />
+      <button onclick="this.parentElement.remove()" style="background:rgba(231,76,60,0.2);border:none;border-radius:6px;padding:6px 8px;color:var(--red);cursor:pointer;font-size:0.8rem;">✕</button>
+    `;
+    container.appendChild(row);
+  }
+
+  function calculateBill(orderId) {
+    const container = document.getElementById('bill-items-' + orderId);
+    const rows = container.querySelectorAll('.bill-row');
+    let total = 0;
+    let itemLines = [];
+    rows.forEach(row => {
+      const inputs = row.querySelectorAll('input');
+      const name = inputs[0]?.value.trim();
+      const price = parseFloat(inputs[1]?.value) || 0;
+      if (name && price > 0) {
+        total += price;
+        itemLines.push(`${name}: ₹${price}`);
+      }
+    });
+    if (total === 0) { showToast('Koi item add nahi kiya', 'error'); return; }
+    const totalEl = document.getElementById('bill-total-' + orderId);
+    totalEl.style.display = 'block';
+    totalEl.innerHTML = itemLines.map(l => `<div style="font-size:0.82rem;font-weight:400;color:#C8D8E8;">${l}</div>`).join('') +
+      `<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.1);">Total: ₹${total.toFixed(2)}</div>`;
+    // Store total for saving
+    const saveBtn = document.getElementById('save-bill-' + orderId);
+    saveBtn.style.display = 'block';
+    saveBtn.dataset.amount = total.toFixed(2);
+    saveBtn.dataset.items = itemLines.join(', ');
+  }
+
+  // Real-time bill preview
+  function previewBill(orderId) {
+    const medAmt = parseFloat(document.getElementById('amt-'+orderId)?.value) || 0;
+    const deliveryCharge = 20; // default, GPS will override
+    const platformFee = 5;
+    const total = medAmt + deliveryCharge + platformFee;
+    const preview = document.getElementById('bill-preview-'+orderId);
+    if (medAmt > 0) {
+      preview.style.display = 'block';
+      preview.innerHTML = `Medicine: ₹${medAmt}<br/>Delivery: ₹${deliveryCharge} (GPS se update hoga)<br/>Platform: ₹${platformFee}<br/><strong style="color:var(--green-light)">Total: ₹${total}</strong>`;
+    } else {
+      preview.style.display = 'none';
+    }
+  }
+
+  async function saveBillAmount(orderId) {
+    const medAmt = parseFloat(document.getElementById('amt-'+orderId)?.value);
+    if (!medAmt || medAmt <= 0) { showToast('Medicine amount daalo', 'error'); return; }
+
+    const { data: order } = await db.from('orders').select('*, shops(lat,lng), customers(lat,lng)').eq('id', orderId).single();
+
+    let deliveryCharge = 20;
+    let distance = null;
+    if (order?.shops?.lat && order?.shops?.lng && order?.customers?.lat && order?.customers?.lng) {
+      distance = calcDistance(parseFloat(order.shops.lat), parseFloat(order.shops.lng), parseFloat(order.customers.lat), parseFloat(order.customers.lng));
+      deliveryCharge = Math.max(20, Math.round(distance * 8));
+    }
+
+    const platformFee = 5;
+    const total = medAmt + deliveryCharge + platformFee;
+
+    try {
+      await db.from('orders').update({
+        total_amount: total,
+        medicine_amount: medAmt,
+        delivery_charge: deliveryCharge
+      }).eq('id', orderId);
+      showToast(`✅ ₹${medAmt} + ₹${deliveryCharge} + ₹5 = ₹${total}`, 'success');
+      loadShopOrders();
+    } catch(e) { showToast('Save nahi hua', 'error'); }
+  }
+
+  // ===== DISTANCE (Haversine) =====
+  function calcDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371;
+    const dLat = (lat2-lat1)*Math.PI/180;
+    const dLon = (lon2-lon1)*Math.PI/180;
+    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+    return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+  }
+
+
+
+  async function loadRiderEarnings() {
+    try {
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const { data: orders } = await db.from('orders')
+        .select('total_amount, created_at')
+        .eq('status', 'delivered')
+        .gte('created_at', sevenDaysAgo);
+      const total = orders?.reduce((sum, o) => sum + (o.total_amount || 0), 0) || 0;
+      const count = orders?.length || 0;
+      // Rider gets 20% of total
+      const riderEarning = (total * 0.20).toFixed(2);
+      document.getElementById('rider-stat-active').textContent = count;
+      document.getElementById('rider-stat-done').textContent = `₹${riderEarning}`;
+    } catch(e) {}
   }
 
   async function updateOrder(id, status) {
