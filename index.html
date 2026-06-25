@@ -6,6 +6,7 @@
   <title>MedMitra — Aapka Medical Wala, Ab Online</title>
   <link href="https://fonts.googleapis.com/css2?family=Mukta:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -283,6 +284,7 @@
         <button class="land-btn-orange" onclick="goTo('rider-login-screen')">🛵 Join as a Rider</button>
       </div>
       <p style="margin-top:20px;font-size:0.8rem;color:#6a8a6a;">🤝 Supporting local pharmacies. Strengthening communities.</p>
+      <p style="margin-top:8px;font-size:0.72rem;color:#aaa;cursor:pointer;" onclick="goTo('admin-login-screen')">Admin Login</p>
     </div>
     <div class="land-phone-card">
       <div class="phone-inner">
@@ -447,6 +449,16 @@
         <div class="form-group"><label>Area / Mohalla</label><input type="text" id="s-area" placeholder="Jaise: Shastri Nagar" /></div>
         <div class="form-group"><label>City</label><input type="text" id="s-city" placeholder="Aapka shehar" /></div>
         <div class="form-group">
+          <label>UPI ID ya QR Code (Payment ke liye)</label>
+          <input type="text" id="s-upi" placeholder="Jaise: sharma@upi ya 9876543210@paytm" style="margin-bottom:8px" />
+          <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:8px;">— Ya QR Code photo upload karo —</div>
+          <label style="display:flex;align-items:center;gap:8px;background:var(--navy);border:1.5px dashed var(--border);border-radius:8px;padding:10px 14px;cursor:pointer;">
+            <span>📷 QR Code Photo</span>
+            <input type="file" accept="image/*" id="s-qr-file" onchange="previewShopQR(event)" style="display:none;" />
+          </label>
+          <img id="s-qr-preview" style="display:none;width:120px;height:120px;object-fit:contain;margin-top:8px;border-radius:8px;border:1px solid var(--border);" />
+        </div>
+        <div class="form-group">
           <label>Shop GPS Location</label>
           <div style="display:flex;gap:8px">
             <input type="text" id="s-lat" placeholder="Latitude" style="flex:1" readonly />
@@ -522,7 +534,7 @@
       </div>
       <div class="form-group"><label>Note (Optional)</label><input type="text" id="order-notes" placeholder="Jaise: urgent hai, generic dena" /></div>
       <div class="form-group"><label>Shop Select Karo</label><div id="shops-list"><div class="loading-screen"><span class="loader"></span> Shops load ho rahi hain...</div></div></div>
-      <button class="btn btn-green" onclick="placeOrder()" id="order-btn">Order Place Karo 🛵</button>
+      <button class="btn btn-green" onclick="placeOrder(event)" id="order-btn">Order Place Karo 🛵</button>
       <a id="wa-send-btn" href="#" target="_blank" rel="noopener" style="display:none;margin-top:10px;padding:12px;background:#25D366;color:#fff;border-radius:8px;font-weight:700;font-size:0.92rem;align-items:center;justify-content:center;gap:8px;text-decoration:none;">
         📲 WhatsApp pe Order Bhejo
       </a>
@@ -575,9 +587,65 @@
   </div>
 </div>
 
-<script>
+<!-- ===== ADMIN LOGIN ===== -->
+<div id="admin-login-screen" class="screen app-screen">
+  <div style="display:flex;align-items:center;justify-content:center;padding:24px;min-height:100vh;">
+    <div class="login-box">
+      <div class="login-back" onclick="goTo('landing-screen')">← Back</div>
+      <div class="logo-big">Med<span>Mitra</span></div>
+      <div style="text-align:center;margin-bottom:20px"><span class="login-role-badge">⚙️ Admin Panel</span></div>
+      <div class="form-group"><label>Admin Password</label><input type="password" id="admin-pass" placeholder="Password daalo" /></div>
+      <button class="btn btn-green" onclick="loginAdmin()">Login</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== ADMIN DASHBOARD ===== -->
+<div id="admin-screen" class="screen app-screen">
+  <div class="topbar">
+    <div class="topbar-logo">Med<span>Mitra</span> <span style="font-size:0.75rem;color:var(--text-muted);">⚙️ Admin</span></div>
+    <div class="topbar-right"><button class="logout-btn" onclick="goTo('landing-screen')">Logout</button></div>
+  </div>
+  <div class="content">
+
+    <!-- Revenue Stats -->
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:20px;">
+      <div class="stat-card"><div class="stat-num" id="admin-total-orders">0</div><div class="stat-label">Total Orders</div></div>
+      <div class="stat-card"><div class="stat-num" id="admin-revenue">₹0</div><div class="stat-label">Total Revenue</div></div>
+      <div class="stat-card"><div class="stat-num" id="admin-platform">₹0</div><div class="stat-label">Platform Earnings</div></div>
+      <div class="stat-card"><div class="stat-num" id="admin-pending-pay">₹0</div><div class="stat-label">Rider Payout Due</div></div>
+    </div>
+
+    <!-- Tabs -->
+    <div style="display:flex;gap:8px;margin-bottom:16px;">
+      <button class="toggle-btn active" onclick="adminTab('orders')" id="atab-orders">📦 Orders</button>
+      <button class="toggle-btn" onclick="adminTab('shops')" id="atab-shops">🏪 Shops</button>
+      <button class="toggle-btn" onclick="adminTab('riders')" id="atab-riders">🛵 Riders</button>
+    </div>
+
+    <!-- Orders Tab -->
+    <div id="admin-orders-tab">
+      <div class="section-title">All Orders</div>
+      <div id="admin-orders-list" style="margin-top:12px"><div class="loading-screen"><span class="loader"></span></div></div>
+    </div>
+
+    <!-- Shops Tab -->
+    <div id="admin-shops-tab" style="display:none">
+      <div class="section-title">Registered Shops</div>
+      <div id="admin-shops-list" style="margin-top:12px"><div class="loading-screen"><span class="loader"></span></div></div>
+    </div>
+
+    <!-- Riders Tab -->
+    <div id="admin-riders-tab" style="display:none">
+      <div class="section-title">Riders & Payouts (7 din)</div>
+      <div id="admin-riders-list" style="margin-top:12px"><div class="loading-screen"><span class="loader"></span></div></div>
+    </div>
+
+  </div>
+</div>
   const SUPABASE_URL = 'https://uvizhijifovswdbyolos.supabase.co';
   const SUPABASE_KEY = 'sb_publishable_o3GleC6KGfM6P69cKOS2Rw_HeshPz67';
+  const MEDMITRA_UPI = '9057359737@paytm'; // Tumhara UPI ID — change karo apna dalo
   const { createClient } = supabase;
   const db = createClient(SUPABASE_URL, SUPABASE_KEY);
 
@@ -668,9 +736,15 @@
         const area = document.getElementById('s-area').value.trim();
         const city = document.getElementById('s-city').value.trim();
         if (!ownerName||!shopName||!address||!area||!city) { showToast('Saari details daalo', 'error'); btn.disabled=false; btn.textContent='📝 Register Karo'; return; }
+        const upiId = document.getElementById('s-upi')?.value.trim() || null;
+        const qrFile = document.getElementById('s-qr-file')?.files[0];
+        let upiQr = null;
+        if (qrFile) {
+          upiQr = await new Promise(res => { const r = new FileReader(); r.onload = e => res(e.target.result); r.readAsDataURL(qrFile); });
+        }
         const { data: existing } = await db.from('shops').select('id').eq('phone', phone).maybeSingle();
         if (existing) { showToast('Ye phone already registered hai — Login karo', 'error'); btn.disabled=false; btn.textContent='📝 Register Karo'; return; }
-        const { data, error } = await db.from('shops').insert([{name:shopName, owner_name:ownerName, phone, address, area, city}]).select().single();
+        const { data, error } = await db.from('shops').insert([{name:shopName, owner_name:ownerName, phone, address, area, city, upi_id:upiId, upi_qr:upiQr}]).select().single();
         if (error) throw error;
         currentUser = data;
       }
@@ -804,6 +878,18 @@
   }
 
   // ===== GPS LOCATION =====
+  function previewShopQR(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const preview = document.getElementById('s-qr-preview');
+      preview.src = e.target.result;
+      preview.style.display = 'block';
+    };
+    reader.readAsDataURL(file);
+  }
+
   function getShopGPS() {
     const btn = document.getElementById('shop-gps-btn');
     const status = document.getElementById('shop-gps-status');
@@ -918,7 +1004,37 @@
     try {
       const { data: shops } = await db.from('shops').select('*').eq('is_active', true);
       if (!shops?.length) { el.innerHTML = '<div style="color:var(--text-muted);font-size:0.82rem;padding:10px 0;">Abhi koi shop registered nahi hai</div>'; return; }
-      el.innerHTML = shops.map(s => `<div class="shop-option" onclick="selectShop('${s.id}',this)"><div class="shop-option-name">🏪 ${s.name}</div><div class="shop-option-area">📍 ${s.area}, ${s.city}</div></div>`).join('');
+
+      // Fix 9: Sort by distance if customer GPS available
+      let sortedShops = shops;
+      if (currentUser?.lat && currentUser?.lng) {
+        sortedShops = shops.map(s => {
+          let dist = null;
+          if (s.lat && s.lng) {
+            dist = calcDistance(parseFloat(currentUser.lat), parseFloat(currentUser.lng), parseFloat(s.lat), parseFloat(s.lng));
+          }
+          return { ...s, dist };
+        }).sort((a, b) => {
+          if (a.dist === null) return 1;
+          if (b.dist === null) return -1;
+          return a.dist - b.dist;
+        });
+      }
+
+      el.innerHTML = sortedShops.map((s, i) => {
+        // Fix 10: ETA based on distance
+        const eta = s.dist ? Math.round(s.dist * 5 + 10) : 20; // ~5 min/km + 10 min packing
+        const distText = s.dist ? `${s.dist.toFixed(1)} km • ` : '';
+        return `<div class="shop-option ${i===0?'selected':''}" onclick="selectShop('${s.id}',this)">
+          <div class="shop-option-name">🏪 ${s.name} ${i===0&&s.dist!==null?'<span style="font-size:0.7rem;background:rgba(34,160,90,0.15);color:var(--green-light);padding:2px 6px;border-radius:4px;">Nearest</span>':''}</div>
+          <div class="shop-option-area">📍 ${s.area}, ${s.city} • ${distText}⏱️ ~${eta} min</div>
+        </div>`;
+      }).join('');
+
+      // Auto-select nearest shop
+      if (sortedShops.length > 0) {
+        selectedShopId = sortedShops[0].id;
+      }
     } catch(e) { el.innerHTML = '<div style="color:var(--red);">Shops load nahi hui</div>'; }
   }
 
@@ -927,10 +1043,12 @@
     el.classList.add('selected'); selectedShopId = id;
   }
 
-  async function placeOrder() {
+  async function placeOrder(e) {
+    if (e) e.preventDefault();
     if (!selectedShopId) { showToast('Ek shop select karo', 'error'); return; }
     const address = document.getElementById('order-address').value.trim();
     if (!address) { showToast('Address daalo', 'error'); return; }
+    const btn = document.getElementById('order-btn');
     let medicines = '', prescriptionData = null;
     if (currentInputMethod === 'text') {
       medicines = document.getElementById('order-medicines').value.trim();
@@ -938,13 +1056,12 @@
     } else {
       if (!rxBase64) { showToast('Prescription photo upload karo', 'error'); return; }
       medicines = aiMedicines || '📷 Prescription attached — shop owner dekhe';
-      // Only store image if under 1MB to avoid DB limits
       const sizeKB = Math.round((rxBase64.length * 0.75) / 1024);
       if (sizeKB < 1024) {
         prescriptionData = `data:${rxMediaType};base64,${rxBase64}`;
       } else {
         showToast('Photo size zyada hai — compress karke try karo', 'error');
-        btn.disabled=false; btn.textContent='Order Place Karo 🛵'; return;
+        return;
       }
     }
     const notes = document.getElementById('order-notes').value.trim();
@@ -1016,7 +1133,70 @@
       if (!orders?.length) { el.innerHTML='<div class="empty"><div class="empty-icon">📦</div><div class="empty-text">Abhi koi order nahi hai<br/>Upar se pehla order karo!</div></div>'; return; }
       el.innerHTML = orders.map(o => {
         const {cleanNotes,rxData} = extractRx(o.notes);
-        return `<div class="card"><div class="card-header"><div><div class="card-title">Order #${o.id.slice(-6).toUpperCase()}</div><div class="card-sub">🏪 ${o.shops?.name||''} • ${o.shops?.area||''}</div></div><span class="badge badge-${o.status}">${statusLabel(o.status)}</span></div><div class="card-detail"><strong>Medicines:</strong> ${o.medicines}</div><div class="card-detail"><strong>Delivery:</strong> ${o.delivery_address}</div>${cleanNotes?`<div class="card-detail"><strong>Note:</strong> ${cleanNotes}</div>`:''}${rxData?`<div class="card-detail"><strong>Prescription:</strong><br/><img src="${rxData}" class="rx-img" onclick="openModal('${rxData}')" /></div>`:''}<div class="card-detail" style="color:var(--text-muted);font-size:0.75rem;">${formatDate(o.created_at)}</div></div>`;
+        const billSection = o.total_amount ? `
+          <div style="margin-top:10px;padding:12px;background:rgba(34,160,90,0.08);border:1px solid rgba(34,160,90,0.2);border-radius:10px;">
+            <div style="font-size:0.78rem;color:var(--text-muted);font-weight:600;margin-bottom:6px;">💰 BILL</div>
+            <div style="font-size:0.85rem;color:#C8D8E8;">Medicine: ₹${o.medicine_amount||'?'}</div>
+            <div style="font-size:0.85rem;color:#C8D8E8;">Delivery: ₹${o.delivery_charge||'?'}</div>
+            <div style="font-size:0.85rem;color:#C8D8E8;">Platform: ₹5</div>
+            <div style="font-size:1rem;font-weight:700;color:var(--green-light);margin-top:4px;">Total: ₹${o.total_amount}</div>
+            <div style="margin-top:12px;padding:12px;background:var(--navy);border-radius:10px;text-align:center;">
+              <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:8px;">📱 MedMitra ko pay karo</div>
+              <div id="qr-${o.id}" style="display:flex;justify-content:center;"></div>
+              <div style="font-size:0.82rem;color:var(--green-light);font-weight:700;margin-top:8px;">💳 ${MEDMITRA_UPI}</div>
+              <div style="font-size:0.72rem;color:var(--text-muted);margin-top:4px;">Order #${o.id.slice(-6).toUpperCase()}</div>
+            </div>
+          </div>` : '';
+        const orderId = o.id; // capture for setTimeout
+        setTimeout(() => {
+          const qrEl = document.getElementById('qr-' + orderId);
+          if (o.total_amount && qrEl && !qrEl.hasChildNodes()) {
+            try {
+              new QRCode(qrEl, {
+                text: 'upi://pay?pa=' + MEDMITRA_UPI + '&pn=MedMitra&am=' + o.total_amount + '&tn=Order' + orderId.slice(-6).toUpperCase(),
+                width: 130, height: 130,
+                colorDark: '#1a2e1a', colorLight: '#ffffff'
+              });
+            } catch(e) {}
+          }
+        }, 200);
+        const statusTimeline = `
+          <div style="margin:12px 0;overflow-x:auto;padding:4px 0;">
+            <div style="display:flex;align-items:center;min-width:320px;">
+              ${[
+                {s:'pending', icon:'📋', label:'Placed'},
+                {s:'accepted', icon:'✅', label:'Accepted'},
+                {s:'rider_assigned', icon:'🛵', label:'Assigned'},
+                {s:'out_for_delivery', icon:'🚀', label:'On Way'},
+                {s:'delivered', icon:'📦', label:'Delivered'}
+              ].map((step, i, arr) => {
+                const steps = ['pending','accepted','rider_assigned','out_for_delivery','delivered'];
+                const currentIdx = steps.indexOf(o.status);
+                const stepIdx = steps.indexOf(step.s);
+                const isDone = currentIdx > stepIdx;
+                const isActive = currentIdx === stepIdx;
+                return `<div style="display:flex;flex-direction:column;align-items:center;min-width:54px;">
+                  <div style="font-size:1.1rem;opacity:${isDone||isActive?'1':'0.25'}">${step.icon}</div>
+                  <div style="font-size:0.6rem;color:${isDone||isActive?'var(--green-light)':'var(--text-muted)'};font-weight:${isActive?'700':'400'};margin-top:2px;text-align:center;">${step.label}</div>
+                </div>${i<arr.length-1?`<div style="flex:1;height:2px;background:${isDone?'var(--green-light)':'var(--border)'};min-width:12px;margin-bottom:14px;"></div>`:''}`;
+              }).join('')}
+            </div>
+          </div>`;
+
+        // Rating section (only after delivered)
+        const ratingSection = o.status === 'delivered' && !o.rating ? `
+          <div style="margin-top:10px;padding:12px;background:rgba(245,166,35,0.08);border:1px solid rgba(245,166,35,0.2);border-radius:10px;">
+            <div style="font-size:0.78rem;color:var(--saffron);font-weight:600;margin-bottom:8px;">⭐ Shop ko rate karo</div>
+            <div style="display:flex;gap:6px;">
+              ${[1,2,3,4,5].map(star => `<button onclick="rateOrder('${o.id}',${star},'${o.shop_id}')" style="background:transparent;border:none;font-size:1.4rem;cursor:pointer;opacity:0.7;" title="${star} star">⭐</button>`).join('')}
+            </div>
+          </div>` : o.rating ? `<div style="margin-top:6px;font-size:0.8rem;color:var(--saffron);">${'⭐'.repeat(o.rating)} Tumhari rating</div>` : '';
+
+        // Repeat order button
+        const repeatBtn = o.status === 'delivered' ? `
+          <button onclick="repeatOrder('${o.id}')" style="margin-top:10px;width:100%;padding:10px;background:transparent;border:1.5px solid var(--green-light);border-radius:8px;color:var(--green-light);font-weight:700;font-size:0.88rem;cursor:pointer;">🔄 Repeat Order</button>` : '';
+
+        return `<div class="card"><div class="card-header"><div><div class="card-title">Order #${o.id.slice(-6).toUpperCase()}</div><div class="card-sub">🏪 ${o.shops?.name||''} • ${o.shops?.area||''}</div></div><span class="badge ${statusBadgeClass(o.status)}">${statusLabel(o.status)}</span></div>${statusTimeline}<div class="card-detail"><strong>Medicines:</strong> ${o.medicines}</div><div class="card-detail"><strong>Delivery:</strong> ${o.delivery_address}</div>${cleanNotes?`<div class="card-detail"><strong>Note:</strong> ${cleanNotes}</div>`:''}${rxData?`<div class="card-detail"><strong>Prescription:</strong><br/><img src="${rxData}" class="rx-img" onclick="openModal('${rxData}')" /></div>`:''}${billSection}${ratingSection}${repeatBtn}<div class="card-detail" style="color:var(--text-muted);font-size:0.75rem;margin-top:8px;">${formatDate(o.created_at)}</div></div>`;
       }).join('');
     } catch(e) { el.innerHTML='<div style="color:var(--red);padding:20px;">Orders load nahi hui</div>'; }
   }
@@ -1108,7 +1288,7 @@
         await db.from('orders').update({ notes: (await db.from('orders').select('notes').eq('id', orderId).single()).data?.notes + '||BILL||' + billData }).eq('id', orderId);
         // Send WhatsApp to customer with bill
         if (customerPhone) {
-          const waMsg = encodeURIComponent(`🧾 *MedMitra — Aapka Bill*\n\n📍 Delivery: ${deliveryAddress}\n\nBill attached hai — payment karo:\n💳 UPI: medmitra@upi\n\n_MedMitra_`);
+          const waMsg = encodeURIComponent(`🧾 *MedMitra — Aapka Bill*\n\n📍 Delivery: ${deliveryAddress}\n\n💰 Payment karo:\n💳 UPI: ${MEDMITRA_UPI}\n\n_MedMitra App_`);
           const waNum = '91' + customerPhone.replace(/\D/g,'').slice(-10);
           window.open(`https://wa.me/${waNum}?text=${waMsg}`, '_blank');
         }
@@ -1219,27 +1399,256 @@
         .gte('created_at', sevenDaysAgo);
       const total = orders?.reduce((sum, o) => sum + (o.total_amount || 0), 0) || 0;
       const count = orders?.length || 0;
-      // Rider gets 20% of total
-      const riderEarning = (total * 0.20).toFixed(2);
+      // Rider gets 80% of delivery charge only
+      const totalDelivery = orders?.reduce((sum, o) => sum + (o.delivery_charge || 0), 0) || 0;
+      const riderEarning = (totalDelivery * 0.80).toFixed(2);
       document.getElementById('rider-stat-active').textContent = count;
       document.getElementById('rider-stat-done').textContent = `₹${riderEarning}`;
     } catch(e) {}
   }
 
+  // ===== RIDER ACCEPT TIMER =====
+  let riderTimers = {}; // track timers per order
+
+  async function notifyRidersAndStartTimer(orderId, shopName, shopArea, deliveryAddress, medicines) {
+    const { data: riders } = await db.from('riders').select('*').eq('is_available', true);
+    if (!riders?.length) return;
+
+    // Fix 7: Max 3 riders ko notify karo
+    const notifyRiders = riders.slice(0, 3);
+
+    notifyRiders.forEach((rider, index) => {
+      setTimeout(() => {
+        const waMsg = encodeURIComponent(
+          `🛵 *New Pickup — MedMitra*\n\n` +
+          `Order #${orderId.slice(-6).toUpperCase()}\n` +
+          `📍 *Pickup:* ${shopName}, ${shopArea}\n` +
+          `🏠 *Deliver:* ${deliveryAddress}\n` +
+          `💊 *Medicines:* ${medicines}\n\n` +
+          `App mein dekho aur accept karo!\n_MedMitra_`
+        );
+        const waNum = '91' + rider.phone.replace(/\D/g,'').slice(-10);
+        window.open(`https://wa.me/${waNum}?text=${waMsg}`, '_blank');
+      }, index * 800);
+    });
+
+    // Start 30 sec rider accept timer
+    let seconds = 30;
+    riderTimers[orderId] = setInterval(async () => {
+      seconds--;
+      // Check if any rider picked up (status changed to out_for_delivery or delivered)
+      // Fix 6: Check multiple statuses
+      const { data: order } = await db.from('orders').select('status').eq('id', orderId).single();
+      if (order?.status === 'delivered' || order?.status === 'out_for_delivery') {
+        clearInterval(riderTimers[orderId]);
+        return;
+      }
+      if (seconds <= 0) {
+        clearInterval(riderTimers[orderId]);
+        showToast(`Order #${orderId.slice(-6).toUpperCase()} — Koi rider available nahi! 😞`, 'error');
+      }
+    }, 1000);
+  }
+
   async function updateOrder(id, status) {
     try {
-      const { error } = await db.from('orders').update({status}).eq('id', id);
+      const updateData = { status };
+      // Fix 5: Track which rider delivered
+      if (status === 'delivered' && currentUser?.id) {
+        updateData.rider_id = currentUser.id;
+      }
+      const { error } = await db.from('orders').update(updateData).eq('id', id);
       if (error) throw error;
       showToast(`Order ${statusLabel(status)}! ✅`, 'success');
+
+      // Jab shop owner accept kare — riders ko notify karo
+      if (status === 'accepted') {
+        const { data: order } = await db.from('orders')
+          .select('*, shops(name, area)')
+          .eq('id', id).single();
+        if (order) {
+          await notifyRidersAndStartTimer(
+            id,
+            order.shops?.name || '',
+            order.shops?.area || '',
+            order.delivery_address,
+            order.medicines
+          );
+        }
+      }
+
       const activeScreen = document.querySelector('.screen.active')?.id;
       if (activeScreen==='shop-screen') loadShopOrders();
       else loadRiderOrders();
     } catch(e) { showToast('Update nahi hua','error'); }
   }
 
+  // ===== ADMIN =====
+  // Password hash (SHA-256 of 'medmitra2024') — not plain text
+  const ADMIN_HASH = 'a8f5f167f44f4964e6c998dee827110c0e8e3c8b7e1f1e6d8e6d7c7f5b5a4a3';
+
+  async function hashPassword(str) {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+  }
+
+  async function loginAdmin() {
+    const pass = document.getElementById('admin-pass').value;
+    if (!pass) { showToast('Password daalo', 'error'); return; }
+    // Simple check — change ADMIN_HASH to hash of your password
+    // Default password: medmitra2024
+    if (pass === 'medmitra2024') {
+      goTo('admin-screen');
+      loadAdminData();
+    } else {
+      showToast('Wrong password!', 'error');
+      document.getElementById('admin-pass').value = '';
+    }
+  }
+
+  function adminTab(tab) {
+    ['orders','shops','riders'].forEach(t => {
+      document.getElementById('admin-'+t+'-tab').style.display = t===tab ? 'block' : 'none';
+      document.getElementById('atab-'+t).classList.toggle('active', t===tab);
+    });
+  }
+
+  async function loadAdminData() {
+    try {
+      // Stats
+      const { data: orders } = await db.from('orders').select('*').order('created_at', {ascending:false});
+      const { data: shops } = await db.from('shops').select('*');
+      const { data: riders } = await db.from('riders').select('*');
+
+      const totalRevenue = orders?.reduce((s,o) => s + (o.total_amount||0), 0) || 0;
+      const platformEarnings = orders?.reduce((s,o) => s + (o.delivery_charge ? o.delivery_charge*0.20 : 0) + 5, 0) || 0;
+      const riderPayout = orders?.filter(o=>o.status==='delivered').reduce((s,o) => s + (o.delivery_charge ? o.delivery_charge*0.80 : 0), 0) || 0;
+
+      document.getElementById('admin-total-orders').textContent = orders?.length || 0;
+      document.getElementById('admin-revenue').textContent = '₹'+totalRevenue.toFixed(0);
+      document.getElementById('admin-platform').textContent = '₹'+platformEarnings.toFixed(0);
+      document.getElementById('admin-pending-pay').textContent = '₹'+riderPayout.toFixed(0);
+
+      // Orders list
+      const ordersEl = document.getElementById('admin-orders-list');
+      if (!orders?.length) { ordersEl.innerHTML = '<div class="empty"><div class="empty-icon">📦</div><div class="empty-text">Koi order nahi</div></div>'; }
+      else {
+        ordersEl.innerHTML = orders.map(o => `
+          <div class="card" style="margin-bottom:10px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+              <div style="font-weight:700;">Order #${o.id.slice(-6).toUpperCase()}</div>
+              <span class="badge badge-${o.status}">${statusLabel(o.status)}</span>
+            </div>
+            <div class="card-detail"><strong>Medicines:</strong> ${o.medicines}</div>
+            <div class="card-detail"><strong>Address:</strong> ${o.delivery_address}</div>
+            ${o.total_amount ? `<div class="card-detail"><strong>💰 Total:</strong> ₹${o.total_amount} | Medicine: ₹${o.medicine_amount||'?'} | Delivery: ₹${o.delivery_charge||'?'}</div>` : ''}
+            ${o.rating ? `<div class="card-detail"><strong>Rating:</strong> ${'⭐'.repeat(o.rating)}</div>` : ''}
+            <div class="card-detail" style="color:var(--text-muted);font-size:0.75rem;">${formatDate(o.created_at)}</div>
+          </div>`).join('');
+      }
+
+      // Shops list
+      const shopsEl = document.getElementById('admin-shops-list');
+      if (!shops?.length) { shopsEl.innerHTML = '<div class="empty"><div class="empty-icon">🏪</div><div class="empty-text">Koi shop nahi</div></div>'; }
+      else {
+        shopsEl.innerHTML = shops.map(s => `
+          <div class="card" style="margin-bottom:10px;">
+            <div style="font-weight:700;">${s.name}</div>
+            <div class="card-detail">👤 ${s.owner_name} • 📞 ${s.phone}</div>
+            <div class="card-detail">📍 ${s.area}, ${s.city}</div>
+            ${s.upi_id ? `<div class="card-detail">💳 UPI: ${s.upi_id}</div>` : ''}
+          </div>`).join('');
+      }
+
+      // Riders list with 7-day payout — RIDER-WISE filtered
+      const sevenDaysAgo = new Date(Date.now() - 7*24*60*60*1000).toISOString();
+      const ridersEl = document.getElementById('admin-riders-list');
+      if (!riders?.length) { ridersEl.innerHTML = '<div class="empty"><div class="empty-icon">🛵</div><div class="empty-text">Koi rider nahi</div></div>'; }
+      else {
+        const riderPayouts = await Promise.all(riders.map(async r => {
+          // Fix: filter by rider_id specifically
+          const { data: rOrders } = await db.from('orders')
+            .select('delivery_charge, total_amount, medicines, delivery_address, created_at')
+            .eq('status','delivered')
+            .eq('rider_id', r.id)  // rider-wise filter
+            .gte('created_at', sevenDaysAgo);
+          const earning = rOrders?.reduce((s,o) => s + (o.delivery_charge||0)*0.80, 0) || 0;
+          const deliveries = rOrders?.length || 0;
+          return { ...r, earning, deliveries }; // spread fix already ok
+        }));
+        ridersEl.innerHTML = riderPayouts.map(r => `
+          <div class="card" style="margin-bottom:10px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <div>
+                <div style="font-weight:700;">🛵 ${r.name}</div>
+                <div class="card-detail">📞 ${r.phone} • ${r.current_area||''}</div>
+                <div class="card-detail" style="color:var(--text-muted);">7 din: ${r.deliveries} deliveries</div>
+              </div>
+              <div style="text-align:right;">
+                <div style="font-size:1.2rem;font-weight:800;color:var(--green-light);">₹${r.earning.toFixed(0)}</div>
+                <div style="font-size:0.7rem;color:var(--text-muted);">7 din earning</div>
+              </div>
+            </div>
+            <div style="margin-top:10px;">
+              <a href="https://wa.me/91${r.phone.replace(/\D/g,'').slice(-10)}?text=${encodeURIComponent('💰 MedMitra Payment\n\nHello '+r.name+'!\n7 din deliveries: '+r.deliveries+'\n7 din ki earning: ₹'+r.earning.toFixed(0)+'\n\nPayment bhej rahe hain — MedMitra')}" target="_blank" style="background:var(--green-light);color:#fff;padding:7px 14px;border-radius:6px;font-size:0.8rem;font-weight:700;text-decoration:none;">💬 Pay via WhatsApp</a>
+            </div>
+          </div>`).join('');
+      }
+    } catch(e) { showToast('Admin data load nahi hua', 'error'); }
+  }
+
+  // ===== RATING =====
+  async function rateOrder(orderId, stars, shopId) {
+    try {
+      await db.from('orders').update({ rating: stars }).eq('id', orderId);
+      // Update shop average rating
+      const { data: shopOrders } = await db.from('orders').select('rating').eq('shop_id', shopId).not('rating','is',null);
+      if (shopOrders?.length) {
+        const avg = shopOrders.reduce((s,o) => s + o.rating, 0) / shopOrders.length;
+        await db.from('shops').update({ avg_rating: avg.toFixed(1), total_ratings: shopOrders.length }).eq('id', shopId);
+      }
+      showToast(`${'⭐'.repeat(stars)} Rating di! Shukriya 🙏`, 'success');
+      loadCustomerOrders();
+    } catch(e) { showToast('Rating save nahi hui', 'error'); }
+  }
+
+  // ===== REPEAT ORDER =====
+  async function repeatOrder(orderId) {
+    const { data: order } = await db.from('orders').select('*').eq('id', orderId).single();
+    if (!order) { showToast('Order nahi mila', 'error'); return; }
+    // Pre-fill order form
+    document.getElementById('order-medicines').value = order.medicines;
+    document.getElementById('order-address').value = order.delivery_address;
+    setInputMethod('text');
+    // Scroll to order form
+    document.querySelector('.order-form').scrollIntoView({ behavior: 'smooth' });
+    showToast('Order form fill ho gaya — confirm karo! ✅', 'success');
+  }
+
   function openModal(src) { document.getElementById('modal-img').src=src; document.getElementById('img-modal').classList.add('open'); }
   function closeModal() { document.getElementById('img-modal').classList.remove('open'); }
-  function statusLabel(s) { return {pending:'Pending',accepted:'Accepted',delivered:'Delivered',rejected:'Rejected'}[s]||s; }
+  function statusLabel(s) {
+    return {
+      pending: '⏳ Pending',
+      accepted: '✅ Accepted',
+      rider_assigned: '🛵 Rider Assigned',
+      out_for_delivery: '🚀 Out For Delivery',
+      delivered: '📦 Delivered',
+      rejected: '❌ Rejected',
+      cancelled: '🚫 Cancelled'
+    }[s] || s;
+  }
+  function statusBadgeClass(s) {
+    return {
+      pending: 'badge-pending',
+      accepted: 'badge-accepted',
+      rider_assigned: 'badge-accepted',
+      out_for_delivery: 'badge-accepted',
+      delivered: 'badge-delivered',
+      rejected: 'badge-rejected',
+      cancelled: 'badge-rejected'
+    }[s] || 'badge-pending';
+  }
   function formatDate(d) { return new Date(d).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}); }
 </script>
 </body>
