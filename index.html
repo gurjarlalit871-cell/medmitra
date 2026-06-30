@@ -1669,7 +1669,10 @@
       const activeScreen = document.querySelector('.screen.active')?.id;
       if (activeScreen==='shop-screen') loadShopOrders();
       else loadRiderOrders();
-    } catch(e) { showToast('Update nahi hua','error'); }
+    } catch(e) { 
+      console.error('updateOrder error:', e);
+      showToast('Update nahi hua: ' + (e.message || e.toString()), 'error'); 
+    }
   }
 
   // ===== ADMIN =====
