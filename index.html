@@ -606,7 +606,7 @@
     <div class="topbar-logo">Med<span>Mitra</span> <span style="font-size:0.75rem;color:var(--text-muted);">⚙️ Admin</span></div>
     <div class="topbar-right">
       <button class="logout-btn" onclick="loadAdminData()" style="border-color:var(--green-light);color:var(--green-light);margin-right:8px;">🔄 Refresh</button>
-      <button class="logout-btn" onclick="goTo('landing-screen')">Logout</button>
+      <button class="logout-btn" onclick="localStorage.removeItem('mm_user');sessionStorage.removeItem('mm_user');currentUser=null;goTo('landing-screen')">Logout</button>
     </div>
   </div>
   <div class="content">
@@ -701,14 +701,14 @@
 
   async function loginCustomer() {
     const phone = document.getElementById('c-phone').value.trim();
-    if (!phone || phone.length < 10) { showToast('Phone number sahi daalo', 'error'); return; }
+    if (!phone || !/^[6-9]\d{9}$/.test(phone)) { showToast('Sahi Indian phone number daalo (10 digits, 6-9 se shuru)', 'error'); return; }
     const btn = document.getElementById('c-login-btn');
     btn.disabled = true; btn.innerHTML = '<span class="loader"></span>Please wait...';
     try {
       if (cAuthMode === 'login') {
         const { data } = await db.from('customers').select('*').eq('phone', phone).maybeSingle();
         if (!data) { showToast('Phone registered nahi — pehle Register karo', 'error'); btn.disabled=false; btn.textContent='🔑 Login'; return; }
-        currentUser = data;
+        currentUser = {...data, phone: data.phone || phone};
       } else {
         const name = document.getElementById('c-name').value.trim();
         const address = document.getElementById('c-address').value.trim();
@@ -726,15 +726,17 @@
 
   async function loginShop() {
     const phone = document.getElementById('s-phone').value.trim();
-    if (!phone || phone.length < 10) { showToast('Phone number sahi daalo', 'error'); return; }
+    if (!phone || !/^[6-9]\d{9}$/.test(phone)) { showToast('Sahi Indian phone number daalo (10 digits, 6-9 se shuru)', 'error'); return; }
     const btn = document.getElementById('s-login-btn');
     btn.disabled = true; btn.innerHTML = '<span class="loader"></span>Please wait...';
     try {
       if (sAuthMode === 'login') {
+        // LOGIN ONLY
         const { data } = await db.from('shops').select('*').eq('phone', phone).maybeSingle();
         if (!data) { showToast('Phone registered nahi — pehle Register karo', 'error'); btn.disabled=false; btn.textContent='🔑 Login'; return; }
-        currentUser = data;
+        currentUser = {...data, phone: data.phone || phone};
       } else {
+        // REGISTER ONLY
         const ownerName = document.getElementById('s-owner-name').value.trim();
         const shopName = document.getElementById('s-shop-name').value.trim();
         const address = document.getElementById('s-address').value.trim();
@@ -749,7 +751,7 @@
         }
         const { data: existing } = await db.from('shops').select('id').eq('phone', phone).maybeSingle();
         if (existing) { showToast('Ye phone already registered hai — Login karo', 'error'); btn.disabled=false; btn.textContent='📝 Register Karo'; return; }
-        const { data, error } = await db.from('shops').insert([{name:shopName, owner_name:ownerName, phone, address, area, city, upi_id:upiId, upi_qr:upiQr}]).select().single();
+        const { data, error } = await db.from('shops').insert([{name:shopName, owner_name:ownerName, phone, address, area, city, upi_id:upiId, upi_qr:upiQr, is_active:true}]).select().single();
         if (error) throw error;
         currentUser = data;
       }
@@ -759,14 +761,14 @@
 
   async function loginRider() {
     const phone = document.getElementById('r-phone').value.trim();
-    if (!phone || phone.length < 10) { showToast('Phone number sahi daalo', 'error'); return; }
+    if (!phone || !/^[6-9]\d{9}$/.test(phone)) { showToast('Sahi Indian phone number daalo (10 digits, 6-9 se shuru)', 'error'); return; }
     const btn = document.getElementById('r-login-btn');
     btn.disabled = true; btn.innerHTML = '<span class="loader"></span>Please wait...';
     try {
       if (rAuthMode === 'login') {
         const { data } = await db.from('riders').select('*').eq('phone', phone).maybeSingle();
         if (!data) { showToast('Phone registered nahi — pehle Register karo', 'error'); btn.disabled=false; btn.textContent='🔑 Login'; return; }
-        currentUser = data; riderAvailable = data.is_available ?? true;
+        currentUser = {...data, phone: data.phone || phone}; riderAvailable = data.is_available ?? true;
       } else {
         const name = document.getElementById('r-name').value.trim();
         const area = document.getElementById('r-area').value.trim();
@@ -774,7 +776,7 @@
         if (!name||!area||!city) { showToast('Saari details daalo', 'error'); btn.disabled=false; btn.textContent='📝 Register Karo'; return; }
         const { data: existing } = await db.from('riders').select('id').eq('phone', phone).maybeSingle();
         if (existing) { showToast('Ye phone already registered hai — Login karo', 'error'); btn.disabled=false; btn.textContent='📝 Register Karo'; return; }
-        const { data, error } = await db.from('riders').insert([{name, phone, current_area:area, is_available:true}]).select().single();
+        const { data, error } = await db.from('riders').insert([{name, phone, current_area:area, city, is_available:true}]).select().single();
         if (error) throw error;
         currentUser = data; riderAvailable = true;
       }
@@ -831,9 +833,14 @@
 
   function logout(role) {
     localStorage.removeItem('mm_user');
+    sessionStorage.removeItem('mm_user'); // FIX: was missing — caused auto re-login after logout
     currentUser = null; selectedShopId = null; rxBase64 = null; aiMedicines = null;
     currentInputMethod = 'text';
-    if (refreshTimer) clearInterval(refreshTimer);
+    if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+    if (orderTimerInterval) { clearInterval(orderTimerInterval); orderTimerInterval = null; } // FIX: clear order timer
+    // Clear all rider timers
+    Object.values(riderTimers).forEach(t => clearInterval(t));
+    riderTimers = {};
     goTo(role === 'customer' ? 'customer-login-screen' : role === 'shop' ? 'shop-login-screen' : 'rider-login-screen');
     showToast('Logged out!');
   }
@@ -841,6 +848,10 @@
   // Auto-restore session on page load
   async function restoreSession() {
     try {
+      // Clear any stale timers from previous session
+      if (orderTimerInterval) { clearInterval(orderTimerInterval); orderTimerInterval = null; }
+      if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+      Object.values(riderTimers).forEach(t => clearInterval(t)); riderTimers = {};
       // Try localStorage first, then sessionStorage
       const saved = localStorage.getItem('mm_user') || sessionStorage.getItem('mm_user');
       if (!saved) return;
@@ -900,7 +911,11 @@
     try {
       const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true'
+        },
         body: JSON.stringify({
           model: 'claude-sonnet-4-6', max_tokens: 1000,
           messages: [{ role: 'user', content: [
@@ -1017,26 +1032,29 @@
   let currentShopIndex = 0;
 
   async function startOrderTimer(orderId, allShops) {
+    // Clear any existing timer for safety
+    if (orderTimerInterval) clearInterval(orderTimerInterval);
     pendingOrderId = orderId;
-    shopQueue = allShops;
+    shopQueue = [...allShops]; // copy to avoid mutation
     currentShopIndex = 0;
-    waitForAcceptance(orderId, allShops[0]);
+    waitForAcceptance(orderId, allShops[0], allShops);
   }
 
-  async function waitForAcceptance(orderId, shop) {
+  async function waitForAcceptance(orderId, shop, localQueue) {
     let seconds = 30;
-    const toastEl = document.getElementById('toast');
 
     // Show timer toast
     showTimerToast(seconds, shop.name);
+    if (orderTimerInterval) clearInterval(orderTimerInterval);
     orderTimerInterval = setInterval(async () => {
       seconds--;
       showTimerToast(seconds, shop.name);
 
       // Check if accepted
       const { data: order } = await db.from('orders').select('status').eq('id', orderId).single();
-      if (order?.status === 'accepted' || order?.status === 'delivered') {
+      if (order?.status === 'accepted' || order?.status === 'delivered' || order?.status === 'rider_assigned' || order?.status === 'out_for_delivery') {
         clearInterval(orderTimerInterval);
+        orderTimerInterval = null;
         document.getElementById('toast').className = '';
         showToast('Order accept ho gaya! 🎉', 'success');
         loadCustomerOrders();
@@ -1045,13 +1063,14 @@
 
       if (order?.status === 'rejected' || seconds <= 0) {
         clearInterval(orderTimerInterval);
+        orderTimerInterval = null;
         currentShopIndex++;
-        if (currentShopIndex < shopQueue.length) {
+        if (currentShopIndex < localQueue.length) {
           // Transfer to next shop
-          const nextShop = shopQueue[currentShopIndex];
+          const nextShop = localQueue[currentShopIndex];
           await db.from('orders').update({ shop_id: nextShop.id, status: 'pending' }).eq('id', orderId);
           showToast(`${shop.name} ne nahi liya — ${nextShop.name} pe transfer! 🔄`, '');
-          setTimeout(() => waitForAcceptance(orderId, nextShop), 1000);
+          setTimeout(() => waitForAcceptance(orderId, nextShop, localQueue), 1000);
         } else {
           // No shop available
           await db.from('orders').update({ status: 'rejected' }).eq('id', orderId);
@@ -1093,10 +1112,10 @@
       el.innerHTML = sortedShops.map((s, i) => {
         // Fix 10: ETA based on distance
         const eta = s.dist ? Math.round(s.dist * 5 + 10) : 20; // ~5 min/km + 10 min packing
-        const distText = s.dist ? `${s.dist.toFixed(1)} km • ` : '';
+        const distText = s.dist ? `${s.dist.toFixed(1)} km` : '';
         return `<div class="shop-option ${i===0?'selected':''}" onclick="selectShop('${s.id}',this)">
-          <div class="shop-option-name">🏪 ${s.name} ${i===0&&s.dist!==null?'<span style="font-size:0.7rem;background:rgba(34,160,90,0.15);color:var(--green-light);padding:2px 6px;border-radius:4px;">Nearest</span>':''}</div>
-          <div class="shop-option-area">📍 ${s.area}, ${s.city} • ${distText}⏱️ ~${eta} min</div>
+          <div class="shop-option-name">🏪 ${s.name} ${i===0&&s.dist!==null?'<span style="font-size:0.7rem;background:rgba(34,160,90,0.15);color:var(--green-light);padding:2px 6px;border-radius:4px;">📍 Nearest</span>':''}</div>
+          <div class="shop-option-area">📍 ${s.area}, ${s.city}${distText ? ' • ' + distText : ''} • ⏱️ ~${eta} min</div>
         </div>`;
       }).join('');
 
@@ -1114,6 +1133,7 @@
 
   async function placeOrder(e) {
     if (e) e.preventDefault();
+    if (!currentUser?.id) { showToast('Session expire ho gaya — phir se login karo', 'error'); logout('customer'); return; }
     if (!selectedShopId) { showToast('Ek shop select karo', 'error'); return; }
     const address = document.getElementById('order-address').value.trim();
     if (!address) { showToast('Address daalo', 'error'); return; }
@@ -1136,16 +1156,18 @@
     const notes = document.getElementById('order-notes').value.trim();
     btn.disabled=true; btn.innerHTML='<span class="loader"></span>Place ho raha hai...';
     try {
-      const { error } = await db.from('orders').insert([{
-        customer_id: currentUser.id, shop_id: selectedShopId, medicines,
+      const placedShopId = selectedShopId; // save before clearing
+      const { data: newOrder, error } = await db.from('orders').insert([{
+        customer_id: currentUser.id, shop_id: placedShopId, medicines,
         delivery_address: address, status: 'pending',
         notes: prescriptionData ? (notes?notes+'||RX||':'||RX||')+prescriptionData : (notes||null)
-      }]);
+      }]).select('id').single();
       if (error) throw error;
+      const newOrderId = newOrder?.id;
 
       // WhatsApp notification to shop owner
       try {
-        const { data: shopData } = await db.from('shops').select('phone, name').eq('id', selectedShopId).single();
+        const { data: shopData } = await db.from('shops').select('phone, name').eq('id', placedShopId).single();
         if (shopData?.phone) {
           const waMsg = encodeURIComponent(
             `🆕 *New Order — MedMitra*\n\n` +
@@ -1163,15 +1185,25 @@
 
       showToast('Order place ho gaya! 🎉', 'success');
 
-      // Start 30-sec timer for auto-transfer
-      const { data: allShops } = await db.from('shops').select('*').eq('is_active', true);
-      if (allShops && allShops.length > 1) {
-        const orderId = (await db.from('orders').select('id').eq('customer_id', currentUser.id).order('created_at', {ascending: false}).limit(1).single()).data?.id;
-        if (orderId) {
-          const otherShops = allShops.filter(s => s.id !== selectedShopId);
-          const selectedShop = allShops.find(s => s.id === selectedShopId);
-          await startOrderTimer(orderId, [selectedShop, ...otherShops]);
+      // Show WhatsApp fallback button — set BEFORE form clear so it persists
+      try {
+        const { data: shopData2 } = await db.from('shops').select('phone,name').eq('id', placedShopId).single();
+        if (shopData2?.phone) {
+          const waFallbackMsg = encodeURIComponent(`🆕 *Order — MedMitra*\n\n💊 *Medicines:* ${medicines}\n📍 *Address:* ${address}${notes?'\n📝 *Note:* '+notes:''}\n\n_App se order diya_`);
+          const waFallbackNum = '91' + shopData2.phone.replace(/\D/g,'').slice(-10);
+          const waBtn = document.getElementById('wa-send-btn');
+          waBtn.href = `https://wa.me/${waFallbackNum}?text=${waFallbackMsg}`;
+          waBtn.style.display = 'flex';
         }
+      } catch(e2) { /* optional */ }
+
+      // Start 30-sec timer for auto-transfer (use ID from insert, not a re-query)
+      const { data: allShops } = await db.from('shops').select('*').eq('is_active', true);
+      if (newOrderId && allShops && allShops.length > 0) {
+        const selectedShop = allShops.find(s => s.id === placedShopId);
+        const otherShops = allShops.filter(s => s.id !== placedShopId);
+        const shopList = selectedShop ? [selectedShop, ...otherShops] : allShops;
+        await startOrderTimer(newOrderId, shopList);
       }
       document.getElementById('order-medicines').value='';
       document.getElementById('order-notes').value='';
@@ -1179,6 +1211,7 @@
       document.getElementById('rx-preview').style.display='none';
       document.getElementById('photo-ok-msg').style.display='none';
       document.getElementById('rx-upload-box').style.borderColor='';
+      // NOTE: wa-send-btn is intentionally NOT hidden here — customer may need it
       rxBase64=null; aiMedicines=null; selectedShopId=null;
       const rxFile = document.getElementById('rx-file');
       if (rxFile) rxFile.value = '';
@@ -1263,13 +1296,15 @@
     try {
       const { data: orders } = await db.from('orders').select('*, customers(name,phone)').eq('shop_id', currentUser.id).order('created_at',{ascending:false});
       document.getElementById('stat-pending').textContent = orders?.filter(o=>o.status==='pending').length||0;
-      document.getElementById('stat-accepted').textContent = orders?.filter(o=>o.status==='accepted').length||0;
+      document.getElementById('stat-accepted').textContent = orders?.filter(o=>['accepted','rider_assigned','out_for_delivery'].includes(o.status)).length||0;
       document.getElementById('stat-delivered').textContent = orders?.filter(o=>o.status==='delivered').length||0;
       if (!orders?.length) { el.innerHTML='<div class="empty"><div class="empty-icon">⏳</div><div class="empty-text">Abhi koi order nahi aaya</div></div>'; return; }
       el.innerHTML = orders.map(o => {
         const {cleanNotes,rxData} = extractRx(o.notes);
         const rxImgShop = rxData ? `<div class="card-detail"><strong>Prescription 📄</strong><br/><img src="${rxData}" class="rx-img" onclick="openModal(this.src)" /></div>` : '';
-        return `<div class="card"><div class="card-header"><div><div class="card-title">Order #${o.id.slice(-6).toUpperCase()}</div><div class="card-sub">👤 ${o.customers?.name||''} • 📞 ${o.customers?.phone||''}</div></div><span class="badge badge-${o.status}">${statusLabel(o.status)}</span></div><div class="card-detail"><strong>Medicines:</strong> ${o.medicines}</div><div class="card-detail"><strong>Address:</strong> ${o.delivery_address}</div>${cleanNotes?`<div class="card-detail"><strong>Note:</strong> ${cleanNotes}</div>`:''}${rxImgShop}<div class="card-detail" style="color:var(--text-muted);font-size:0.75rem;">${formatDate(o.created_at)}</div>
+        const shopBadgeClass = ['accepted','rider_assigned','out_for_delivery'].includes(o.status) ? 'badge-accepted' : `badge-${o.status}`;
+        const shopStatusText = o.status==='rider_assigned' ? '🛵 Rider On Way' : o.status==='out_for_delivery' ? '🚀 Out For Delivery' : statusLabel(o.status);
+        return `<div class="card" data-order-id="${o.id}"><div class="card-header"><div><div class="card-title">Order #${o.id.slice(-6).toUpperCase()}</div><div class="card-sub">👤 ${o.customers?.name||''} • 📞 ${o.customers?.phone||''}</div></div><span class="badge ${shopBadgeClass}">${shopStatusText}</span></div><div class="card-detail"><strong>Medicines:</strong> ${o.medicines}</div><div class="card-detail"><strong>Address:</strong> ${o.delivery_address}</div>${cleanNotes?`<div class="card-detail"><strong>Note:</strong> ${cleanNotes}</div>`:''}${rxImgShop}<div class="card-detail" style="color:var(--text-muted);font-size:0.75rem;">${formatDate(o.created_at)}</div>
         ${o.total_amount ? `
           <div style="margin-top:10px;padding:12px;background:rgba(34,160,90,0.08);border:1px solid rgba(34,160,90,0.2);border-radius:10px;">
             <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;">💰 BILL BREAKDOWN</div>
@@ -1294,27 +1329,108 @@
               </label>
             </div>
           </div>
-          <div class="card-actions" style="margin-top:10px"><button class="btn btn-saffron" onclick="updateOrder('${o.id}','delivered')">🛵 Mark Delivered</button></div>
+          <div class="card-actions" style="margin-top:10px"><button class="btn btn-saffron" onclick="shopMarkReady('${o.id}')">📦 Medicines Ready — Rider Ko Bhejo</button></div>
         `:''}
         ${o.status==='pending'?`<div class="card-actions"><button class="btn btn-accept" onclick="updateOrder('${o.id}','accepted')">✅ Accept</button><button class="btn btn-red" onclick="updateOrder('${o.id}','rejected')">❌ Reject</button></div>`:''}</div>`;
       }).join('');
     } catch(e) { el.innerHTML='<div style="color:var(--red);padding:20px;">Orders load nahi hui</div>'; }
   }
 
+  // Shop marks medicines as packed/ready — does NOT set rider_id or delivered
+  async function shopMarkReady(orderId) {
+    try {
+      const { data: order } = await db.from('orders').select('*, shops(name,area)').eq('id', orderId).single();
+      if (!order) { showToast('Order nahi mila', 'error'); return; }
+      // Keep status accepted — just notify riders again
+      await notifyRidersAndStartTimer(
+        orderId,
+        order.shops?.name || '',
+        order.shops?.area || '',
+        order.delivery_address,
+        order.medicines
+      );
+      showToast('Rider ko notify kar diya! Pickup ka wait karo 🛵', 'success');
+    } catch(e) { showToast('Error: ' + (e.message||''), 'error'); }
+  }
+
   async function loadRiderOrders() {
     const el = document.getElementById('rider-orders');
     try {
-      const { data: orders } = await db.from('orders').select('*, shops(name,area,address), customers(name,phone)').in('status',['accepted','delivered']).order('created_at',{ascending:false});
-      // rider-stat-active and rider-stat-done are managed by loadRiderEarnings (7-day stats)
+      // Show accepted (needs rider accept), rider_assigned (needs pickup confirm), out_for_delivery (needs deliver) orders
+      const { data: orders } = await db.from('orders').select('*, shops(name,area,address), customers(name,phone)').in('status',['accepted','rider_assigned','out_for_delivery','delivered']).order('created_at',{ascending:false});
       if (!orders?.length) { el.innerHTML='<div class="empty"><div class="empty-icon">🛵</div><div class="empty-text">Koi order pickup ke liye nahi hai abhi</div></div>'; return; }
-      el.innerHTML = orders.map(o=>`<div class="card"><div class="card-header"><div><div class="card-title">Order #${o.id.slice(-6).toUpperCase()}</div><div class="card-sub">👤 ${o.customers?.name||''} • 📞 ${o.customers?.phone||''}</div></div><span class="badge badge-${o.status}">${statusLabel(o.status)}</span></div><div class="card-detail"><strong>Pickup:</strong> 🏪 ${o.shops?.name||''}, ${o.shops?.area||''}</div><div class="card-detail"><strong>Deliver:</strong> 📍 ${o.delivery_address}</div><div class="card-detail"><strong>Medicines:</strong> ${o.medicines}</div><div class="card-detail" style="color:var(--text-muted);font-size:0.75rem;">${formatDate(o.created_at)}</div>${o.status==='accepted'?`
-        <div class="form-group" style="margin-top:12px">
-          <label style="font-size:0.78rem;color:var(--text-muted)">📸 Bill Photo Upload Karo</label>
-          <input type="file" accept="image/*" onchange="uploadBill(event,'${o.id}','${o.customers?.phone||''}','${o.delivery_address}')" style="width:100%;padding:8px;background:rgba(255,255,255,0.05);border:1px dashed var(--border);border-radius:8px;color:var(--white);font-size:0.82rem;margin-top:6px;" />
-        </div>
-        <div class="card-actions"><button class="btn btn-green" onclick="updateOrder('${o.id}','delivered')">✅ Mark Delivered</button></div>
-      `:''}</div>`).join('');
+      el.innerHTML = orders.map(o => {
+        let actionBtns = '';
+        if (o.status === 'accepted') {
+          // Rider ne abhi accept nahi kiya — Accept button dikhao
+          actionBtns = `<div class="card-actions">
+            <button class="btn btn-accept" onclick="riderAcceptOrder('${o.id}')">✅ Accept Karo</button>
+          </div>`;
+        } else if (o.status === 'rider_assigned' && o.rider_id === currentUser.id) {
+          // Is rider ne accept kiya — Pickup confirm karo
+          actionBtns = `
+            <div class="form-group" style="margin-top:12px">
+              <label style="font-size:0.78rem;color:var(--text-muted)">📸 Bill Photo Upload Karo (Optional)</label>
+              <input type="file" accept="image/*" onchange="uploadBill(event,'${o.id}','${o.customers?.phone||''}','${o.delivery_address}')" style="width:100%;padding:8px;background:rgba(255,255,255,0.05);border:1px dashed var(--border);border-radius:8px;color:var(--white);font-size:0.82rem;margin-top:6px;" />
+            </div>
+            <div class="card-actions"><button class="btn btn-saffron" onclick="riderPickupOrder('${o.id}')">📦 Pickup Confirm Karo</button></div>`;
+        } else if (o.status === 'out_for_delivery' && o.rider_id === currentUser.id) {
+          // Pickup ho gaya — Delivered mark karo
+          actionBtns = `<div class="card-actions"><button class="btn btn-green" onclick="riderDeliverOrder('${o.id}')">✅ Delivered Mark Karo</button></div>`;
+        }
+        return `<div class="card"><div class="card-header"><div><div class="card-title">Order #${o.id.slice(-6).toUpperCase()}</div><div class="card-sub">👤 ${o.customers?.name||''} • 📞 ${o.customers?.phone||''}</div></div><span class="badge badge-${o.status==='rider_assigned'||o.status==='out_for_delivery'?'accepted':o.status}">${statusLabel(o.status)}</span></div><div class="card-detail"><strong>Pickup:</strong> 🏪 ${o.shops?.name||''}, ${o.shops?.area||''}</div><div class="card-detail"><strong>Deliver:</strong> 📍 ${o.delivery_address}</div><div class="card-detail"><strong>Medicines:</strong> ${o.medicines}</div><div class="card-detail" style="color:var(--text-muted);font-size:0.75rem;">${formatDate(o.created_at)}</div>${actionBtns}</div>`;
+      }).join('');
     } catch(e) { el.innerHTML='<div style="color:var(--red);padding:20px;">Orders load nahi hui</div>'; }
+  }
+
+  // Rider explicitly accepts order → rider_assigned
+  async function riderAcceptOrder(orderId) {
+    try {
+      // Check current status first to give clear feedback
+      const { data: current } = await db.from('orders').select('status').eq('id', orderId).single();
+      if (current?.status !== 'accepted') {
+        showToast('Yeh order kisi aur rider ne le liya — refresh karo', 'error');
+        loadRiderOrders(); return;
+      }
+      const { error } = await db.from('orders').update({
+        status: 'rider_assigned',
+        rider_id: currentUser.id,
+        accepted_at: new Date().toISOString()
+      }).eq('id', orderId).eq('status', 'accepted'); // only if still accepted
+      if (error) throw error;
+      // Clear rider accept timer if running
+      if (riderTimers[orderId]) { clearInterval(riderTimers[orderId]); delete riderTimers[orderId]; }
+      showToast('Order accept kar liya! Ab shop se pickup karo 🏪', 'success');
+      loadRiderOrders();
+    } catch(e) { showToast('Accept nahi hua — dobara try karo', 'error'); }
+  }
+
+  // Rider confirms pickup → out_for_delivery
+  async function riderPickupOrder(orderId) {
+    try {
+      const { error } = await db.from('orders').update({
+        status: 'out_for_delivery',
+        picked_up_at: new Date().toISOString()
+      }).eq('id', orderId).eq('rider_id', currentUser.id);
+      if (error) throw error;
+      showToast('Pickup confirm! Ab deliver karo 🚀', 'success');
+      loadRiderOrders();
+    } catch(e) { showToast('Pickup update nahi hua', 'error'); }
+  }
+
+  // Rider marks delivered
+  async function riderDeliverOrder(orderId) {
+    try {
+      const { error } = await db.from('orders').update({
+        status: 'delivered',
+        delivered_at: new Date().toISOString(),
+        rider_id: currentUser.id
+      }).eq('id', orderId).eq('rider_id', currentUser.id);
+      if (error) throw error;
+      showToast('Order delivered! 🎉 Earning update ho gayi', 'success');
+      loadRiderOrders();
+      loadRiderEarnings();
+    } catch(e) { showToast('Delivered mark nahi hua', 'error'); }
   }
 
   async function toggleAvailability() {
@@ -1474,37 +1590,52 @@
     const { data: riders } = await db.from('riders').select('*').eq('is_available', true);
     if (!riders?.length) return;
 
-    // Fix 7: Max 3 riders ko notify karo
+    // Max 3 riders ko notify karo
     const notifyRiders = riders.slice(0, 3);
 
-    notifyRiders.forEach((rider, index) => {
-      setTimeout(() => {
-        const waMsg = encodeURIComponent(
-          `🛵 *New Pickup — MedMitra*\n\n` +
-          `Order #${orderId.slice(-6).toUpperCase()}\n` +
-          `📍 *Pickup:* ${shopName}, ${shopArea}\n` +
-          `🏠 *Deliver:* ${deliveryAddress}\n` +
-          `💊 *Medicines:* ${medicines}\n\n` +
-          `App mein dekho aur accept karo!\n_MedMitra_`
-        );
-        const waNum = '91' + rider.phone.replace(/\D/g,'').slice(-10);
-        window.open(`https://wa.me/${waNum}?text=${waMsg}`, '_blank');
-      }, index * 800);
+    // Build WhatsApp links and show as clickable toast/panel — window.open blocked on mobile without direct user gesture
+    const waLinks = notifyRiders.map(rider => {
+      const waMsg = encodeURIComponent(
+        `🛵 *New Pickup — MedMitra*\n\n` +
+        `Order #${orderId.slice(-6).toUpperCase()}\n` +
+        `📍 *Pickup:* ${shopName}, ${shopArea}\n` +
+        `🏠 *Deliver:* ${deliveryAddress}\n` +
+        `💊 *Medicines:* ${medicines}\n\n` +
+        `App mein dekho aur accept karo!\n_MedMitra_`
+      );
+      const waNum = '91' + rider.phone.replace(/\D/g,'').slice(-10);
+      return { name: rider.name, url: `https://wa.me/${waNum}?text=${waMsg}` };
     });
+
+    // Show rider notify panel in shop orders area
+    const notifyHtml = `
+      <div id="rider-notify-${orderId}" style="margin-top:10px;padding:12px;background:rgba(245,166,35,0.08);border:1px solid rgba(245,166,35,0.3);border-radius:10px;">
+        <div style="font-size:0.78rem;color:var(--saffron);font-weight:700;margin-bottom:8px;">🛵 Riders ko notify karo:</div>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          ${waLinks.map(l => `<a href="${l.url}" target="_blank" rel="noopener" style="background:var(--green-light);color:#fff;padding:8px 12px;border-radius:6px;font-size:0.82rem;font-weight:700;text-decoration:none;display:block;text-align:center;">💬 ${l.name} ko WhatsApp karo</a>`).join('')}
+        </div>
+      </div>`;
+
+    // Inject into the relevant order card if visible
+    const orderCard = document.querySelector(`[data-order-id="${orderId}"]`);
+    if (orderCard) {
+      const existing = document.getElementById(`rider-notify-${orderId}`);
+      if (!existing) orderCard.insertAdjacentHTML('beforeend', notifyHtml);
+    }
 
     // Start 30 sec rider accept timer
     let seconds = 30;
     riderTimers[orderId] = setInterval(async () => {
       seconds--;
-      // Check if any rider picked up (status changed to out_for_delivery or delivered)
-      // Fix 6: Check multiple statuses
       const { data: order } = await db.from('orders').select('status').eq('id', orderId).single();
-      if (order?.status === 'delivered' || order?.status === 'out_for_delivery') {
+      if (order?.status === 'delivered' || order?.status === 'out_for_delivery' || order?.status === 'rider_assigned') {
         clearInterval(riderTimers[orderId]);
+        delete riderTimers[orderId];
         return;
       }
       if (seconds <= 0) {
         clearInterval(riderTimers[orderId]);
+        delete riderTimers[orderId];
         showToast(`Order #${orderId.slice(-6).toUpperCase()} — Koi rider available nahi! 😞`, 'error');
       }
     }, 1000);
@@ -1514,10 +1645,7 @@
     try {
       const updateData = { status };
       if (status === 'accepted') updateData.accepted_at = new Date().toISOString();
-      if (status === 'delivered') {
-        updateData.delivered_at = new Date().toISOString();
-        if (currentUser?.id) updateData.rider_id = currentUser.id;
-      }
+      // Note: rider_id and delivered_at are now set by riderDeliverOrder() only — not here
       const { error } = await db.from('orders').update(updateData).eq('id', id);
       if (error) throw error;
       showToast(`Order ${statusLabel(status)}! ✅`, 'success');
@@ -1546,7 +1674,7 @@
 
   // ===== ADMIN =====
   // Password hash (SHA-256 of 'medmitra2024') — not plain text
-  const ADMIN_HASH = 'a8f5f167f44f4964e6c998dee827110c0e8e3c8b7e1f1e6d8e6d7c7f5b5a4a3';
+  const ADMIN_HASH = 'd381973535676ef8a40f146574f7220a7a9c656cd2ac55550263299d4f274ae4';
 
   async function hashPassword(str) {
     const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
@@ -1559,7 +1687,8 @@
     const btn = document.querySelector('#admin-login-screen .btn-green');
     btn.disabled = true; btn.innerHTML = '<span class="loader"></span>Checking...';
     try {
-      if (pass !== 'medmitra2024') {
+      const inputHash = await hashPassword(pass);
+      if (inputHash !== ADMIN_HASH) {
         showToast('Wrong password!', 'error');
         document.getElementById('admin-pass').value = '';
         btn.disabled = false; btn.textContent = 'Login';
@@ -1599,9 +1728,10 @@
         throw new Error(isRLS ? 'RLS block kar raha hai — Supabase mein table ki RLS disable karo ya policies add karo' : err.message);
       }
 
-      const totalRevenue = orders?.reduce((s,o) => s + (o.total_amount||0), 0) || 0;
-      const platformEarnings = orders?.reduce((s,o) => s + (o.delivery_charge ? o.delivery_charge*0.20 : 0) + 5, 0) || 0;
-      const riderPayout = orders?.filter(o=>o.status==='delivered').reduce((s,o) => s + (o.delivery_charge ? o.delivery_charge*0.80 : 0), 0) || 0;
+      const deliveredOrders = orders?.filter(o => o.status === 'delivered') || [];
+      const totalRevenue = deliveredOrders.reduce((s,o) => s + (o.total_amount||0), 0);
+      const platformEarnings = deliveredOrders.reduce((s,o) => s + (o.delivery_charge ? o.delivery_charge*0.20 : 0) + 5, 0);
+      const riderPayout = deliveredOrders.reduce((s,o) => s + (o.delivery_charge ? o.delivery_charge*0.80 : 0), 0);
 
       document.getElementById('admin-total-orders').textContent = orders?.length || 0;
       document.getElementById('admin-revenue').textContent = '₹'+totalRevenue.toFixed(0);
@@ -1609,7 +1739,6 @@
       document.getElementById('admin-pending-pay').textContent = '₹'+riderPayout.toFixed(0);
 
       // Orders list
-      const ordersEl = document.getElementById('admin-orders-list');
       if (!orders?.length) { ordersEl.innerHTML = '<div class="empty"><div class="empty-icon">📦</div><div class="empty-text">Koi order nahi</div></div>'; }
       else {
         ordersEl.innerHTML = orders.map(o => `
@@ -1627,7 +1756,6 @@
       }
 
       // Shops list
-      const shopsEl = document.getElementById('admin-shops-list');
       if (!shops?.length) { shopsEl.innerHTML = '<div class="empty"><div class="empty-icon">🏪</div><div class="empty-text">Koi shop nahi</div></div>'; }
       else {
         shopsEl.innerHTML = shops.map(s => `
@@ -1641,7 +1769,6 @@
 
       // Riders list with 7-day payout — RIDER-WISE filtered
       const sevenDaysAgo = new Date(Date.now() - 7*24*60*60*1000).toISOString();
-      const ridersEl = document.getElementById('admin-riders-list');
       if (!riders?.length) { ridersEl.innerHTML = '<div class="empty"><div class="empty-icon">🛵</div><div class="empty-text">Koi rider nahi</div></div>'; }
       else {
         const riderPayouts = await Promise.all(riders.map(async r => {
@@ -1653,7 +1780,7 @@
             .gte('created_at', sevenDaysAgo);
           const earning = rOrders?.reduce((s,o) => s + (o.delivery_charge||0)*0.80, 0) || 0;
           const deliveries = rOrders?.length || 0;
-          return { ...r, earning, deliveries }; // spread fix already ok
+          return { ...r, earning, deliveries };
         }));
         ridersEl.innerHTML = riderPayouts.map(r => `
           <div class="card" style="margin-bottom:10px;">
@@ -1681,6 +1808,7 @@
 
   // ===== RATING =====
   async function rateOrder(orderId, stars, shopId) {
+    if (!orderId || !shopId) { showToast('Rating nahi di ja sakti — order info missing', 'error'); return; }
     try {
       await db.from('orders').update({ rating: stars }).eq('id', orderId);
       // Update shop average rating
@@ -1716,7 +1844,7 @@
     return {
       pending: '⏳ Pending',
       accepted: '✅ Accepted',
-      rider_assigned: '🛵 Rider Assigned',
+      rider_assigned: '🛵 Rider On Way',
       out_for_delivery: '🚀 Out For Delivery',
       delivered: '📦 Delivered',
       rejected: '❌ Rejected',
