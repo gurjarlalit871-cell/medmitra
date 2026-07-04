@@ -1593,16 +1593,16 @@
             <div style="font-size:0.85rem;color:#C8D8E8;">Platform: ₹5</div>
             <div style="font-size:1rem;font-weight:700;color:var(--green-light);margin-top:6px;">Total: ₹${o.total_amount}</div>
           </div>` : ''}
-        ${o.status==='accepted'?`
+        ${['accepted','rider_assigned','out_for_delivery'].includes(o.status) ? `
           <div style="margin-top:12px;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:10px;padding:14px;">
-            <div style="font-size:0.8rem;color:var(--text-muted);font-weight:600;margin-bottom:10px;">💰 BILL BANAO</div>
+            <div style="font-size:0.8rem;color:var(--text-muted);font-weight:600;margin-bottom:10px;">💰 BILL BANAO ${o.total_amount ? '<span style="color:var(--text-muted);font-weight:400;">(edit bhi kar sakte ho)</span>' : ''}</div>
             <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
               <span style="font-size:0.82rem;color:var(--text-muted);white-space:nowrap;">₹ Medicine:</span>
-              <input type="number" id="amt-${o.id}" placeholder="0" oninput="previewBill('${o.id}')" style="flex:1;padding:9px;background:var(--navy);border:1.5px solid var(--border);border-radius:8px;color:#fff;font-size:0.95rem;" />
+              <input type="number" id="amt-${o.id}" placeholder="0" value="${o.medicine_amount ?? ''}" oninput="previewBill('${o.id}')" style="flex:1;padding:9px;background:var(--navy);border:1.5px solid var(--border);border-radius:8px;color:#fff;font-size:0.95rem;" />
             </div>
             <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
               <span style="font-size:0.82rem;color:var(--text-muted);white-space:nowrap;">🛵 Delivery:</span>
-              <input type="number" id="delivery-${o.id}" placeholder="20" value="${gpsDeliveryCharge ?? ''}" ${gpsDeliveryCharge ? 'readonly' : ''} oninput="previewBill('${o.id}')" style="flex:1;padding:9px;background:${gpsDeliveryCharge ? 'rgba(255,255,255,0.03)' : 'var(--navy)'};border:1.5px solid var(--border);border-radius:8px;color:${gpsDeliveryCharge ? 'var(--text-muted)' : '#fff'};font-size:0.95rem;" />
+              <input type="number" id="delivery-${o.id}" placeholder="20" value="${gpsDeliveryCharge ?? o.delivery_charge ?? ''}" ${gpsDeliveryCharge ? 'readonly' : ''} oninput="previewBill('${o.id}')" style="flex:1;padding:9px;background:${gpsDeliveryCharge ? 'rgba(255,255,255,0.03)' : 'var(--navy)'};border:1.5px solid var(--border);border-radius:8px;color:${gpsDeliveryCharge ? 'var(--text-muted)' : '#fff'};font-size:0.95rem;" />
               ${gpsDeliveryCharge ? '<span style="font-size:0.68rem;color:var(--text-muted);">🔒 GPS se locked</span>' : ''}
             </div>
             <div id="delivery-note-${o.id}" style="font-size:0.72rem;color:var(--saffron);margin-bottom:8px;${gpsDeliveryCharge ? 'display:none;' : ''}">⚠️ GPS distance nahi mili — delivery charge manually daalo. Ye order admin ko "manual entry" ke roop mein flag hoga review ke liye.</div>
