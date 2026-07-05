@@ -661,7 +661,7 @@
 
     <!-- Riders Tab -->
     <div id="admin-riders-tab" style="display:none">
-      <div class="section-title">Riders & Payouts (7 din)</div>
+      <div class="section-title">Riders & Payouts (Since Last Payment)</div>
       <div id="admin-riders-list" style="margin-top:12px"><div class="loading-screen"><span class="loader"></span></div></div>
     </div>
 
@@ -860,6 +860,30 @@
     refreshTimer = setInterval(() => { loadRiderOrders(); loadRiderEarnings(); }, 15000);
   }
 
+  // Escapes HTML special characters before inserting user-typed text (name,
+  // address, medicines, notes, etc.) into innerHTML — without this, a
+  // customer could type HTML/script into any of these fields and have it
+  // execute in the shop/rider/admin's browser when they view the order.
+  // For text embedded inside onclick="fn('...text...')" — needs escaping for
+  // BOTH the JS string literal (so a ' in the name can't end the string early)
+  // AND the surrounding HTML attribute (so a " can't break out of onclick="").
+  // Order matters: escape backslash+quote for JS first, then HTML-escape that
+  // result so the browser's attribute-decode step reconstructs it correctly.
+  function jsAttrEscape(str) {
+    const jsEscaped = String(str ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    return escapeHtml(jsEscaped);
+  }
+
+  function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   // Strips control chars and caps length before user-supplied text goes into an
   // external WhatsApp message, preventing malformed/oversized or misleading content.
   function sanitizeForMessage(str, maxLen = 300) {
@@ -1019,6 +1043,7 @@
     currentInputMethod = 'text';
     if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
     if (orderTimerInterval) { clearInterval(orderTimerInterval); orderTimerInterval = null; } // FIX: clear order timer
+    if (window.customerRefreshTimer) { clearInterval(window.customerRefreshTimer); window.customerRefreshTimer = null; } // FIX: zombie timer kept polling after logout, throwing errors every 15s forever
     // Clear all rider timers
     Object.values(riderTimers).forEach(t => clearInterval(t));
     riderTimers = {};
@@ -1035,6 +1060,7 @@
       // Clear any stale timers from previous session
       if (orderTimerInterval) { clearInterval(orderTimerInterval); orderTimerInterval = null; }
       if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+      if (window.customerRefreshTimer) { clearInterval(window.customerRefreshTimer); window.customerRefreshTimer = null; }
       Object.values(riderTimers).forEach(t => clearInterval(t)); riderTimers = {};
       // Try localStorage first, then sessionStorage
       const saved = localStorage.getItem('mm_user') || sessionStorage.getItem('mm_user');
@@ -1310,15 +1336,30 @@
         orderTimerInterval = null;
         currentShopIndex++;
         if (currentShopIndex < localQueue.length) {
-          // Transfer to next shop
+          // Transfer to next shop — guarded so this can't overwrite an order
+          // the original shop accepted in the same instant (race condition).
           const nextShop = localQueue[currentShopIndex];
-          await db.from('orders').update({ shop_id: nextShop.id, status: 'pending' }).eq('id', orderId);
+          const { data: transferred } = await db.from('orders')
+            .update({ shop_id: nextShop.id, status: 'pending' })
+            .eq('id', orderId)
+            .eq('status', 'pending') // only transfer if still actually pending
+            .select();
+          if (!transferred?.length) {
+            // Status changed (shop accepted) in the same instant — don't transfer, just refresh.
+            showToast('Order accept ho gaya! 🎉', 'success');
+            loadCustomerOrders();
+            return;
+          }
           showToast(`${shop.name} ne nahi liya — ${nextShop.name} pe transfer! 🔄`, '');
           setTimeout(() => waitForAcceptance(orderId, nextShop, localQueue), 1000);
         } else {
-          // No shop available
-          await db.from('orders').update({ status: 'rejected' }).eq('id', orderId);
-          showToast('Koi shop available nahi hai abhi 😞', 'error');
+          // No shop available — same guard: only reject if still actually pending
+          const { data: rej } = await db.from('orders').update({ status: 'rejected' }).eq('id', orderId).eq('status', 'pending').select();
+          if (rej?.length) {
+            showToast('Koi shop available nahi hai abhi 😞', 'error');
+          } else {
+            showToast('Order accept ho gaya! 🎉', 'success');
+          }
           loadCustomerOrders();
         }
       }
@@ -1358,8 +1399,8 @@
         const eta = s.dist ? Math.round(s.dist * 5 + 10) : 20; // ~5 min/km + 10 min packing
         const distText = s.dist ? `${s.dist.toFixed(1)} km` : '';
         return `<div class="shop-option ${i===0?'selected':''}" onclick="selectShop('${s.id}',this)">
-          <div class="shop-option-name">🏪 ${s.name} ${i===0&&s.dist!==null?'<span style="font-size:0.7rem;background:rgba(34,160,90,0.15);color:var(--green-light);padding:2px 6px;border-radius:4px;">📍 Nearest</span>':''}</div>
-          <div class="shop-option-area">📍 ${s.area}, ${s.city}${distText ? ' • ' + distText : ''} • ⏱️ ~${eta} min</div>
+          <div class="shop-option-name">🏪 ${escapeHtml(s.name)} ${i===0&&s.dist!==null?'<span style="font-size:0.7rem;background:rgba(34,160,90,0.15);color:var(--green-light);padding:2px 6px;border-radius:4px;">📍 Nearest</span>':''}</div>
+          <div class="shop-option-area">📍 ${escapeHtml(s.area)}, ${escapeHtml(s.city)}${distText ? ' • ' + distText : ''} • ⏱️ ~${eta} min</div>
         </div>`;
       }).join('');
 
@@ -1478,7 +1519,9 @@
   }
 
   async function loadCustomerOrders() {
+    if (!currentUser?.id) return; // guard: don't run if logged out
     const el = document.getElementById('customer-orders');
+    if (!el) return; // guard: don't run if this screen isn't active
     try {
       const { data: orders } = await db.from('orders').select('*, shops(name,area)').eq('customer_id', currentUser.id).order('created_at',{ascending:false});
       if (!orders?.length) { el.innerHTML='<div class="empty"><div class="empty-icon">📦</div><div class="empty-text">Abhi koi order nahi hai<br/>Upar se pehla order karo!</div></div>'; return; }
@@ -1546,7 +1589,7 @@
           <button onclick="cancelOrder('${o.id}')" style="margin-top:10px;width:100%;padding:10px;background:transparent;border:1.5px solid var(--red);border-radius:8px;color:var(--red);font-weight:700;font-size:0.88rem;cursor:pointer;">🚫 Order Cancel Karo</button>` : '';
 
         const rxImg = rxData ? `<div class="card-detail"><strong>Prescription:</strong><br/><img src="${rxData}" class="rx-img" alt="Prescription photo" onclick="openModal(this.src)" /></div>` : '';
-        return `<div class="card"><div class="card-header"><div><div class="card-title">Order #${o.id.slice(-6).toUpperCase()}</div><div class="card-sub">🏪 ${o.shops?.name||''} • ${o.shops?.area||''}</div></div><span class="badge ${statusBadgeClass(o.status)}">${statusLabel(o.status)}</span></div>${statusTimeline}<div class="card-detail"><strong>Medicines:</strong> ${o.medicines}</div><div class="card-detail"><strong>Delivery:</strong> ${o.delivery_address}</div>${cleanNotes?`<div class="card-detail"><strong>Note:</strong> ${cleanNotes}</div>`:''}${rxImg}${billSection}${ratingSection}${repeatBtn}${cancelBtn}<div class="card-detail" style="color:var(--text-muted);font-size:0.75rem;margin-top:8px;">${formatDate(o.created_at)}</div></div>`;
+        return `<div class="card"><div class="card-header"><div><div class="card-title">Order #${o.id.slice(-6).toUpperCase()}</div><div class="card-sub">🏪 ${escapeHtml(o.shops?.name)} • ${escapeHtml(o.shops?.area)}</div></div><span class="badge ${statusBadgeClass(o.status)}">${statusLabel(o.status)}</span></div>${statusTimeline}<div class="card-detail"><strong>Medicines:</strong> ${escapeHtml(o.medicines)}</div><div class="card-detail"><strong>Delivery:</strong> ${escapeHtml(o.delivery_address)}</div>${cleanNotes?`<div class="card-detail"><strong>Note:</strong> ${escapeHtml(cleanNotes)}</div>`:''}${rxImg}${billSection}${ratingSection}${repeatBtn}${cancelBtn}<div class="card-detail" style="color:var(--text-muted);font-size:0.75rem;margin-top:8px;">${formatDate(o.created_at)}</div></div>`;
       }).join('');
     } catch(e) { el.innerHTML='<div style="color:var(--red);padding:20px;">Orders load nahi hui</div>'; }
   }
@@ -1565,7 +1608,10 @@
   }
 
   async function loadShopOrders() {
+    if (!currentUser?.id) return; // guard: don't run if logged out
     const el = document.getElementById('shop-orders');
+    if (!el) return; // guard: don't run if this screen isn't active
+    if (el.contains(document.activeElement) && document.activeElement !== document.body) return; // don't wipe an in-progress bill entry on auto-refresh
     try {
       const { data: orders } = await db.from('orders').select('*, customers(name,phone,lat,lng)').eq('shop_id', currentUser.id).order('created_at',{ascending:false});
       document.getElementById('stat-pending').textContent = orders?.filter(o=>o.status==='pending').length||0;
@@ -1584,7 +1630,7 @@
           const dist = calcDistance(parseFloat(currentUser.lat), parseFloat(currentUser.lng), parseFloat(o.customers.lat), parseFloat(o.customers.lng));
           gpsDeliveryCharge = Math.max(20, Math.round(dist * 8));
         }
-        return `<div class="card" data-order-id="${o.id}"><div class="card-header"><div><div class="card-title">Order #${o.id.slice(-6).toUpperCase()}</div><div class="card-sub">👤 ${o.customers?.name||''} • 📞 ${o.customers?.phone||''}</div></div><span class="badge ${shopBadgeClass}">${shopStatusText}</span></div><div class="card-detail"><strong>Medicines:</strong> ${o.medicines}</div><div class="card-detail"><strong>Address:</strong> ${o.delivery_address}</div>${cleanNotes?`<div class="card-detail"><strong>Note:</strong> ${cleanNotes}</div>`:''}${rxImgShop}<div class="card-detail" style="color:var(--text-muted);font-size:0.75rem;">${formatDate(o.created_at)}</div>
+        return `<div class="card" data-order-id="${o.id}"><div class="card-header"><div><div class="card-title">Order #${o.id.slice(-6).toUpperCase()}</div><div class="card-sub">👤 ${escapeHtml(o.customers?.name)} • 📞 ${escapeHtml(o.customers?.phone)}</div></div><span class="badge ${shopBadgeClass}">${shopStatusText}</span></div><div class="card-detail"><strong>Medicines:</strong> ${escapeHtml(o.medicines)}</div><div class="card-detail"><strong>Address:</strong> ${escapeHtml(o.delivery_address)}</div>${cleanNotes?`<div class="card-detail"><strong>Note:</strong> ${escapeHtml(cleanNotes)}</div>`:''}${rxImgShop}<div class="card-detail" style="color:var(--text-muted);font-size:0.75rem;">${formatDate(o.created_at)}</div>
         ${o.total_amount ? `
           <div style="margin-top:10px;padding:12px;background:rgba(34,160,90,0.08);border:1px solid rgba(34,160,90,0.2);border-radius:10px;">
             <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;">💰 BILL BREAKDOWN</div>
@@ -1611,7 +1657,7 @@
               <button onclick="saveBillAmount('${o.id}')" style="flex:1;background:var(--saffron);border:none;border-radius:8px;padding:10px;color:var(--navy);font-weight:700;font-size:0.88rem;cursor:pointer;">💾 Bill Save Karo</button>
               <label style="flex:1;background:var(--navy-mid);border:1px solid var(--border);border-radius:8px;padding:10px;color:#fff;font-size:0.82rem;cursor:pointer;text-align:center;display:flex;align-items:center;justify-content:center;gap:4px;">
                 📸 Bill Pic
-                <input type="file" accept="image/*" onchange="uploadBill(event,'${o.id}','${o.customers?.phone||''}','${o.delivery_address}')" style="display:none;" />
+                <input type="file" accept="image/*" onchange="uploadBill(event,'${o.id}')" style="display:none;" />
               </label>
             </div>
           </div>
@@ -1640,7 +1686,10 @@
   }
 
   async function loadRiderOrders() {
+    if (!currentUser?.id) return; // guard: don't run if logged out
     const el = document.getElementById('rider-orders');
+    if (!el) return; // guard: don't run if this screen isn't active
+    if (el.contains(document.activeElement) && document.activeElement !== document.body) return; // don't interrupt an in-progress selection on auto-refresh
     try {
       // Show accepted (needs rider accept), rider_assigned (needs pickup confirm), out_for_delivery (needs deliver) orders
       const { data: orders } = await db.from('orders').select('*, shops(name,area,address), customers(name,phone)').in('status',['accepted','rider_assigned','out_for_delivery','delivered']).order('created_at',{ascending:false});
@@ -1657,7 +1706,7 @@
           actionBtns = `
             <div class="form-group" style="margin-top:12px">
               <label style="font-size:0.78rem;color:var(--text-muted)">📸 Bill Photo Upload Karo (Optional)</label>
-              <input type="file" accept="image/*" onchange="uploadBill(event,'${o.id}','${o.customers?.phone||''}','${o.delivery_address}')" style="width:100%;padding:8px;background:rgba(255,255,255,0.05);border:1px dashed var(--border);border-radius:8px;color:var(--white);font-size:0.82rem;margin-top:6px;" />
+              <input type="file" accept="image/*" onchange="uploadBill(event,'${o.id}')" style="width:100%;padding:8px;background:rgba(255,255,255,0.05);border:1px dashed var(--border);border-radius:8px;color:var(--white);font-size:0.82rem;margin-top:6px;" />
             </div>
             <div class="card-actions"><button class="btn btn-saffron" onclick="riderPickupOrder('${o.id}')">📦 Pickup Confirm Karo</button></div>`;
         } else if (o.status === 'out_for_delivery' && o.rider_id === currentUser.id) {
@@ -1674,7 +1723,7 @@
             </div>
             <div class="card-actions"><button class="btn btn-green" onclick="riderDeliverOrder('${o.id}')">✅ Delivered Mark Karo</button></div>`;
         }
-        return `<div class="card"><div class="card-header"><div><div class="card-title">Order #${o.id.slice(-6).toUpperCase()}</div><div class="card-sub">👤 ${o.customers?.name||''} • 📞 ${o.customers?.phone||''}</div></div><span class="badge badge-${o.status==='rider_assigned'||o.status==='out_for_delivery'?'accepted':o.status}">${statusLabel(o.status)}</span></div><div class="card-detail"><strong>Pickup:</strong> 🏪 ${o.shops?.name||''}, ${o.shops?.area||''}</div><div class="card-detail"><strong>Deliver:</strong> 📍 ${o.delivery_address}</div><div class="card-detail"><strong>Medicines:</strong> ${o.medicines}</div><div class="card-detail" style="color:var(--text-muted);font-size:0.75rem;">${formatDate(o.created_at)}</div>${actionBtns}</div>`;
+        return `<div class="card"><div class="card-header"><div><div class="card-title">Order #${o.id.slice(-6).toUpperCase()}</div><div class="card-sub">👤 ${escapeHtml(o.customers?.name)} • 📞 ${escapeHtml(o.customers?.phone)}</div></div><span class="badge badge-${o.status==='rider_assigned'||o.status==='out_for_delivery'?'accepted':o.status}">${statusLabel(o.status)}</span></div><div class="card-detail"><strong>Pickup:</strong> 🏪 ${escapeHtml(o.shops?.name)}, ${escapeHtml(o.shops?.area)}</div><div class="card-detail"><strong>Deliver:</strong> 📍 ${escapeHtml(o.delivery_address)}</div><div class="card-detail"><strong>Medicines:</strong> ${escapeHtml(o.medicines)}</div><div class="card-detail" style="color:var(--text-muted);font-size:0.75rem;">${formatDate(o.created_at)}</div>${actionBtns}</div>`;
       }).join('');
     } catch(e) { el.innerHTML='<div style="color:var(--red);padding:20px;">Orders load nahi hui</div>'; }
   }
@@ -1788,7 +1837,7 @@
     else { btn.textContent='🔴 Offline'; btn.className='btn btn-red'; btn.style.cssText='width:auto;padding:9px 18px;font-size:0.85rem;'; txt.textContent='Abhi offline hoon'; }
   }
 
-  async function uploadBill(event, orderId, customerPhone, deliveryAddress) {
+  async function uploadBill(event, orderId) {
     const file = event.target.files[0];
     if (!file) return;
     showToast('Bill upload ho raha hai...', '');
@@ -1796,9 +1845,13 @@
     reader.onload = async (e) => {
       const billData = e.target.result;
       try {
-        // Save bill in order notes
-        const { data: orderData } = await db.from('orders').select('notes').eq('id', orderId).single();
+        // Fetch fresh from DB rather than trusting values embedded in an HTML
+        // attribute — untrusted free-text (address) in an inline onchange=
+        // attribute is an injection risk, not just a display one.
+        const { data: orderData } = await db.from('orders').select('notes, delivery_address, customers(phone)').eq('id', orderId).single();
         const existingNotes = orderData?.notes || '';
+        const deliveryAddress = orderData?.delivery_address || '';
+        const customerPhone = orderData?.customers?.phone || '';
         await db.from('orders').update({ notes: existingNotes + '||BILL||' + billData }).eq('id', orderId);
         // Send WhatsApp to customer with bill
         if (customerPhone) {
@@ -1920,6 +1973,7 @@
 
 
   async function loadRiderEarnings() {
+    if (!currentUser?.id) return; // guard: don't run if logged out
     try {
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
       const { data: orders } = await db.from('orders')
@@ -1958,7 +2012,7 @@
         `App mein dekho aur accept karo!\n_MedMitra_`
       );
       const waNum = '91' + rider.phone.replace(/\D/g,'').slice(-10);
-      return { name: rider.name, url: `https://wa.me/${waNum}?text=${waMsg}` };
+      return { name: escapeHtml(rider.name), url: `https://wa.me/${waNum}?text=${waMsg}` };
     });
 
     // Show rider notify panel in shop orders area
@@ -2127,8 +2181,8 @@
               <div style="font-weight:700;">Order #${o.id.slice(-6).toUpperCase()}</div>
               <span class="badge badge-${o.status}">${statusLabel(o.status)}</span>
             </div>
-            <div class="card-detail"><strong>Medicines:</strong> ${o.medicines}</div>
-            <div class="card-detail"><strong>Address:</strong> ${o.delivery_address}</div>
+            <div class="card-detail"><strong>Medicines:</strong> ${escapeHtml(o.medicines)}</div>
+            <div class="card-detail"><strong>Address:</strong> ${escapeHtml(o.delivery_address)}</div>
             ${o.total_amount ? `<div class="card-detail"><strong>💰 Total:</strong> ₹${o.total_amount} | Medicine: ₹${o.medicine_amount||'?'} | Delivery: ₹${o.delivery_charge||'?'}${o.delivery_charge_source==='manual' ? ' <span style="color:var(--saffron);font-weight:700;">⚠️ MANUAL — verify karo</span>' : ''}</div>` : ''}
             ${o.status === 'delivered' ? `<div class="card-detail"><strong>Payment:</strong> ${o.payment_status === 'paid' ? `✅ Paid (${o.payment_mode||'?'})` : o.payment_status === 'pending' ? '⚠️ Pending' : 'N/A'}</div>` : ''}
             ${o.rating ? `<div class="card-detail"><strong>Rating:</strong> ${'⭐'.repeat(o.rating)}</div>` : ''}
@@ -2154,9 +2208,9 @@
           <div class="card" style="margin-bottom:10px;">
             <div style="display:flex;justify-content:space-between;align-items:center;">
               <div>
-                <div style="font-weight:700;">🏪 ${s.name}</div>
-                <div class="card-detail">👤 ${s.owner_name} • 📞 ${s.phone}</div>
-                <div class="card-detail">📍 ${s.area}, ${s.city}</div>
+                <div style="font-weight:700;">🏪 ${escapeHtml(s.name)}</div>
+                <div class="card-detail">👤 ${escapeHtml(s.owner_name)} • 📞 ${escapeHtml(s.phone)}</div>
+                <div class="card-detail">📍 ${escapeHtml(s.area)}, ${escapeHtml(s.city)}</div>
                 ${s.upi_id ? `<div class="card-detail">💳 UPI: ${s.upi_id}</div>` : ''}
                 <div class="card-detail" style="color:var(--text-muted);">Pending: ${s.orderCount} orders</div>
               </div>
@@ -2167,7 +2221,7 @@
             </div>
             <div style="margin-top:10px;display:flex;gap:8px;">
               <a href="https://wa.me/91${s.phone.replace(/\D/g,'').slice(-10)}?text=${encodeURIComponent('💰 MedMitra Payment\n\nHello '+s.owner_name+'!\n'+s.name+'\nPending orders: '+s.orderCount+'\nAmount due: ₹'+s.due.toFixed(0)+'\n\nPayment bhej rahe hain — MedMitra')}" target="_blank" style="background:var(--green-light);color:#fff;padding:7px 14px;border-radius:6px;font-size:0.8rem;font-weight:700;text-decoration:none;">💬 Pay via WhatsApp</a>
-              <button onclick="markShopPaid('${s.id}','${s.name.replace(/'/g,"\\'")}')" style="background:#2a9d5c;color:#fff;border:none;padding:7px 14px;border-radius:6px;font-size:0.8rem;font-weight:700;cursor:pointer;">✅ Paid Mark Karo</button>
+              <button onclick="markShopPaid('${s.id}','${jsAttrEscape(s.name)}')" style="background:#2a9d5c;color:#fff;border:none;padding:7px 14px;border-radius:6px;font-size:0.8rem;font-weight:700;cursor:pointer;">✅ Paid Mark Karo</button>
             </div>
           </div>`).join('');
       }
@@ -2175,24 +2229,31 @@
       // Riders list with payout due since last settlement — RIDER-WISE filtered
       if (!riders?.length) { ridersEl.innerHTML = '<div class="empty"><div class="empty-icon">🛵</div><div class="empty-text">Koi rider nahi</div></div>'; }
       else {
-        const riderPayouts = await Promise.all(riders.map(async r => {
+        // Single batched query instead of one query per rider — much faster
+        // as the rider count grows (was N round-trips, now always 1).
+        const riderIds = riders.map(r => r.id);
+        const earliestSinceDate = riders.reduce((min, r) => {
+          const d = r.last_settled_at || '2020-01-01';
+          return d < min ? d : min;
+        }, '9999-12-31');
+        const { data: allDeliveredOrders } = await db.from('orders')
+          .select('rider_id, delivery_charge, created_at')
+          .eq('status', 'delivered')
+          .in('rider_id', riderIds)
+          .gte('created_at', earliestSinceDate);
+        const riderPayouts = riders.map(r => {
           const sinceDate = r.last_settled_at || '2020-01-01';
-          // Fix: filter by rider_id specifically
-          const { data: rOrders } = await db.from('orders')
-            .select('delivery_charge, total_amount, medicines, delivery_address, created_at')
-            .eq('status','delivered')
-            .eq('rider_id', r.id)  // rider-wise filter
-            .gte('created_at', sinceDate);
-          const earning = rOrders?.reduce((s,o) => s + (o.delivery_charge||0)*0.80, 0) || 0;
-          const deliveries = rOrders?.length || 0;
+          const rOrders = (allDeliveredOrders || []).filter(o => o.rider_id === r.id && o.created_at >= sinceDate);
+          const earning = rOrders.reduce((s,o) => s + (o.delivery_charge||0)*0.80, 0);
+          const deliveries = rOrders.length;
           return { ...r, earning, deliveries };
-        }));
+        });
         ridersEl.innerHTML = riderPayouts.map(r => `
           <div class="card" style="margin-bottom:10px;">
             <div style="display:flex;justify-content:space-between;align-items:center;">
               <div>
-                <div style="font-weight:700;">🛵 ${r.name}</div>
-                <div class="card-detail">📞 ${r.phone} • ${r.current_area||''}</div>
+                <div style="font-weight:700;">🛵 ${escapeHtml(r.name)}</div>
+                <div class="card-detail">📞 ${escapeHtml(r.phone)} • ${escapeHtml(r.current_area)}</div>
                 <div class="card-detail" style="color:var(--text-muted);">Since last payment: ${r.deliveries} deliveries</div>
               </div>
               <div style="text-align:right;">
@@ -2202,7 +2263,7 @@
             </div>
             <div style="margin-top:10px;display:flex;gap:8px;">
               <a href="https://wa.me/91${r.phone.replace(/\D/g,'').slice(-10)}?text=${encodeURIComponent('💰 MedMitra Payment\n\nHello '+r.name+'!\nDeliveries: '+r.deliveries+'\nPayment: ₹'+r.earning.toFixed(0)+'\n\nPayment bhej rahe hain — MedMitra')}" target="_blank" style="flex:1;text-align:center;background:var(--green-light);color:#fff;padding:7px 14px;border-radius:6px;font-size:0.8rem;font-weight:700;text-decoration:none;">💬 WhatsApp</a>
-              <button onclick="markRiderPaid('${r.id}','${r.name.replace(/'/g,"\\'")}')" style="flex:1;background:var(--saffron);border:none;border-radius:6px;padding:7px 14px;color:var(--navy);font-weight:700;font-size:0.8rem;cursor:pointer;">✅ Mark Paid</button>
+              <button onclick="markRiderPaid('${r.id}','${jsAttrEscape(r.name)}')" style="flex:1;background:var(--saffron);border:none;border-radius:6px;padding:7px 14px;color:var(--navy);font-weight:700;font-size:0.8rem;cursor:pointer;">✅ Mark Paid</button>
             </div>
           </div>`).join('');
       }
