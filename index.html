@@ -1518,6 +1518,12 @@
     return { cleanNotes:parts[0]||null, rxData:parts[1] };
   }
 
+  function extractBill(notes) {
+    if (!notes||!notes.includes('||BILL||')) return { notes, billImgData:null };
+    const parts = notes.split('||BILL||');
+    return { notes:parts[0]||null, billImgData:parts[1] };
+  }
+
   async function loadCustomerOrders() {
     if (!currentUser?.id) return; // guard: don't run if logged out
     const el = document.getElementById('customer-orders');
@@ -1527,7 +1533,9 @@
       if (!orders?.length) { el.innerHTML='<div class="empty"><div class="empty-icon">📦</div><div class="empty-text">Abhi koi order nahi hai<br/>Upar se pehla order karo!</div></div>'; return; }
       notifyOnStatusChange(orders);
       el.innerHTML = orders.map(o => {
-        const {cleanNotes,rxData} = extractRx(o.notes);
+        const {notes:notesAfterBill, billImgData} = extractBill(o.notes);
+        const {cleanNotes,rxData} = extractRx(notesAfterBill);
+        const billImg = billImgData ? `<div class="card-detail"><strong>🧾 Bill Photo:</strong><br/><img src="${billImgData}" class="rx-img" alt="Bill photo" onclick="openModal(this.src)" /></div>` : '';
         const billSection = o.total_amount ? `
           <div style="margin-top:10px;padding:12px;background:rgba(34,160,90,0.08);border:1px solid rgba(34,160,90,0.2);border-radius:10px;">
             <div style="font-size:0.78rem;color:var(--text-muted);font-weight:600;margin-bottom:6px;">💰 BILL</div>
@@ -1589,7 +1597,7 @@
           <button onclick="cancelOrder('${o.id}')" style="margin-top:10px;width:100%;padding:10px;background:transparent;border:1.5px solid var(--red);border-radius:8px;color:var(--red);font-weight:700;font-size:0.88rem;cursor:pointer;">🚫 Order Cancel Karo</button>` : '';
 
         const rxImg = rxData ? `<div class="card-detail"><strong>Prescription:</strong><br/><img src="${rxData}" class="rx-img" alt="Prescription photo" onclick="openModal(this.src)" /></div>` : '';
-        return `<div class="card"><div class="card-header"><div><div class="card-title">Order #${o.id.slice(-6).toUpperCase()}</div><div class="card-sub">🏪 ${escapeHtml(o.shops?.name)} • ${escapeHtml(o.shops?.area)}</div></div><span class="badge ${statusBadgeClass(o.status)}">${statusLabel(o.status)}</span></div>${statusTimeline}<div class="card-detail"><strong>Medicines:</strong> ${escapeHtml(o.medicines)}</div><div class="card-detail"><strong>Delivery:</strong> ${escapeHtml(o.delivery_address)}</div>${cleanNotes?`<div class="card-detail"><strong>Note:</strong> ${escapeHtml(cleanNotes)}</div>`:''}${rxImg}${billSection}${ratingSection}${repeatBtn}${cancelBtn}<div class="card-detail" style="color:var(--text-muted);font-size:0.75rem;margin-top:8px;">${formatDate(o.created_at)}</div></div>`;
+        return `<div class="card"><div class="card-header"><div><div class="card-title">Order #${o.id.slice(-6).toUpperCase()}</div><div class="card-sub">🏪 ${escapeHtml(o.shops?.name)} • ${escapeHtml(o.shops?.area)}</div></div><span class="badge ${statusBadgeClass(o.status)}">${statusLabel(o.status)}</span></div>${statusTimeline}<div class="card-detail"><strong>Medicines:</strong> ${escapeHtml(o.medicines)}</div><div class="card-detail"><strong>Delivery:</strong> ${escapeHtml(o.delivery_address)}</div>${cleanNotes?`<div class="card-detail"><strong>Note:</strong> ${escapeHtml(cleanNotes)}</div>`:''}${rxImg}${billImg}${billSection}${ratingSection}${repeatBtn}${cancelBtn}<div class="card-detail" style="color:var(--text-muted);font-size:0.75rem;margin-top:8px;">${formatDate(o.created_at)}</div></div>`;
       }).join('');
     } catch(e) { el.innerHTML='<div style="color:var(--red);padding:20px;">Orders load nahi hui</div>'; }
   }
@@ -1619,8 +1627,11 @@
       document.getElementById('stat-delivered').textContent = orders?.filter(o=>o.status==='delivered').length||0;
       if (!orders?.length) { el.innerHTML='<div class="empty"><div class="empty-icon">⏳</div><div class="empty-text">Abhi koi order nahi aaya</div></div>'; return; }
       el.innerHTML = orders.map(o => {
-        const {cleanNotes,rxData} = extractRx(o.notes);
+        const {notes:notesAfterBill2, billImgData:shopBillImgData} = extractBill(o.notes);
+        const {cleanNotes,rxData} = extractRx(notesAfterBill2);
         const rxImgShop = rxData ? `<div class="card-detail"><strong>Prescription 📄</strong><br/><img src="${rxData}" class="rx-img" alt="Prescription photo" onclick="openModal(this.src)" /></div>` : '';
+        const billImgShop = shopBillImgData ? `<div class="card-detail"><strong>🧾 Bill (tumne bheja):</strong><br/><img src="${shopBillImgData}" class="rx-img" alt="Bill photo" onclick="openModal(this.src)" /></div>` : '';
+        const paymentProofImg = o.payment_proof ? `<div class="card-detail"><strong>💰 Payment Screenshot:</strong><br/><img src="${o.payment_proof}" class="rx-img" alt="Payment proof screenshot" onclick="openModal(this.src)" /></div>` : '';
         const shopBadgeClass = ['accepted','rider_assigned','out_for_delivery'].includes(o.status) ? 'badge-accepted' : `badge-${o.status}`;
         const shopStatusText = o.status==='rider_assigned' ? '🛵 Rider On Way' : o.status==='out_for_delivery' ? '🚀 Out For Delivery' : statusLabel(o.status);
         // Pre-compute delivery charge from GPS distance where possible, so the
@@ -1630,7 +1641,7 @@
           const dist = calcDistance(parseFloat(currentUser.lat), parseFloat(currentUser.lng), parseFloat(o.customers.lat), parseFloat(o.customers.lng));
           gpsDeliveryCharge = Math.max(20, Math.round(dist * 8));
         }
-        return `<div class="card" data-order-id="${o.id}"><div class="card-header"><div><div class="card-title">Order #${o.id.slice(-6).toUpperCase()}</div><div class="card-sub">👤 ${escapeHtml(o.customers?.name)} • 📞 ${escapeHtml(o.customers?.phone)}</div></div><span class="badge ${shopBadgeClass}">${shopStatusText}</span></div><div class="card-detail"><strong>Medicines:</strong> ${escapeHtml(o.medicines)}</div><div class="card-detail"><strong>Address:</strong> ${escapeHtml(o.delivery_address)}</div>${cleanNotes?`<div class="card-detail"><strong>Note:</strong> ${escapeHtml(cleanNotes)}</div>`:''}${rxImgShop}<div class="card-detail" style="color:var(--text-muted);font-size:0.75rem;">${formatDate(o.created_at)}</div>
+        return `<div class="card" data-order-id="${o.id}"><div class="card-header"><div><div class="card-title">Order #${o.id.slice(-6).toUpperCase()}</div><div class="card-sub">👤 ${escapeHtml(o.customers?.name)} • 📞 ${escapeHtml(o.customers?.phone)}</div></div><span class="badge ${shopBadgeClass}">${shopStatusText}</span></div><div class="card-detail"><strong>Medicines:</strong> ${escapeHtml(o.medicines)}</div><div class="card-detail"><strong>Address:</strong> ${escapeHtml(o.delivery_address)}</div>${cleanNotes?`<div class="card-detail"><strong>Note:</strong> ${escapeHtml(cleanNotes)}</div>`:''}${rxImgShop}${billImgShop}${paymentProofImg}<div class="card-detail" style="color:var(--text-muted);font-size:0.75rem;">${formatDate(o.created_at)}</div>
         ${o.total_amount ? `
           <div style="margin-top:10px;padding:12px;background:rgba(34,160,90,0.08);border:1px solid rgba(34,160,90,0.2);border-radius:10px;">
             <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;">💰 BILL BREAKDOWN</div>
@@ -2184,6 +2195,7 @@
             <div class="card-detail"><strong>Medicines:</strong> ${escapeHtml(o.medicines)}</div>
             <div class="card-detail"><strong>Address:</strong> ${escapeHtml(o.delivery_address)}</div>
             ${o.total_amount ? `<div class="card-detail"><strong>💰 Total:</strong> ₹${o.total_amount} | Medicine: ₹${o.medicine_amount||'?'} | Delivery: ₹${o.delivery_charge||'?'}${o.delivery_charge_source==='manual' ? ' <span style="color:var(--saffron);font-weight:700;">⚠️ MANUAL — verify karo</span>' : ''}</div>` : ''}
+            ${o.payment_proof ? `<div class="card-detail"><strong>💰 Payment Screenshot:</strong><br/><img src="${o.payment_proof}" class="rx-img" alt="Payment proof screenshot" onclick="openModal(this.src)" /></div>` : ''}
             ${o.status === 'delivered' ? `<div class="card-detail"><strong>Payment:</strong> ${o.payment_status === 'paid' ? `✅ Paid (${o.payment_mode||'?'})` : o.payment_status === 'pending' ? '⚠️ Pending' : 'N/A'}</div>` : ''}
             ${o.rating ? `<div class="card-detail"><strong>Rating:</strong> ${'⭐'.repeat(o.rating)}</div>` : ''}
             <div class="card-detail" style="color:var(--text-muted);font-size:0.75rem;">${formatDate(o.created_at)}</div>
